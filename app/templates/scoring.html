@@ -24,6 +24,10 @@
         <!-- JS 动态渲染评分卡片 -->
     </div>
 
+    <div style="text-align:center;margin:1rem 0">
+        <button class="btn btn-primary" onclick="submitAllScores()">📊 提交评分并计算总分</button>
+    </div>
+
     <div class="card" id="resultCard" style="display:none">
         <h3>📊 评分结果</h3>
         <div class="result-summary" id="resultSummary"></div>
@@ -56,6 +60,7 @@
 <script>
 const PID = "{{pid}}";
 </script>
+<script src="/static/js/app.js"></script>
 <script src="/static/js/scoring.js"></script>
 </body>
 </html>

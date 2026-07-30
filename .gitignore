@@ -11,3 +11,4 @@ data/*.json.bak
 .vscode/
 .idea/
 *.log
+data/

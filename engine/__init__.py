@@ -186,11 +186,20 @@ class ProcessEngine:
                 self._save_projects()
 
     def _save_projects(self):
-        """保存项目到磁盘"""
+        """保存项目到磁盘 — 原子写入防数据损坏"""
+        import tempfile
         path = self._get_project_file()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         data = {pid: asdict(p) for pid, p in self._projects.items()}
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        # ponytail: write temp+rename, avoids corruption on crash
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".json")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        except Exception:
+            os.unlink(tmp)
+            raise
 
     def create_project(self, **kwargs) -> AuditProject:
         """创建新的审计项目"""
@@ -334,6 +343,10 @@ class ProcessEngine:
         project = self._projects.get(pid)
         if not project:
             return {"error": "项目不存在"}
+
+        # ponytail: clamp score to valid range
+        max_score = next((d["weight"] for d in PERFORMANCE_INDEX_SYSTEM["dimensions"] if d["name"] == dimension), 100)
+        score = max(0, min(score, max_score))
 
         project.scores[dimension] = score
         project.evidence_files.append({

@@ -65,7 +65,7 @@
             ➡️ 完成当前阶段，进入下一阶段
         </button>
         <div class="action-right">
-            <select id="jumpStage" onchange="goToStage(this.value)">
+            <select id="jumpStage" onchange="jumpTo(parseInt(this.value))">
                 <option value="">跳转到阶段...</option>
             </select>
         </div>
@@ -87,6 +87,7 @@
 <script>
 const PID = "{{pid}}";
 </script>
+<script src="/static/js/app.js"></script>
 <script src="/static/js/workflow.js"></script>
 </body>
 </html>

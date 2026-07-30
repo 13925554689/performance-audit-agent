@@ -17,7 +17,8 @@ from regulations import (
 )
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "perf-audit-agent-2024"
+# ponytail: env var or random, single-user local
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", os.urandom(24).hex())
 
 # ═══════════════════════════════════════════════
 # 路由 — 页面
@@ -78,8 +79,17 @@ def api_list_projects():
 
 @app.route("/api/projects", methods=["POST"])
 def api_create_project():
-    data = request.json
-    project = engine.create_project(**data)
+    data = request.json or {}
+    required = ["name", "org_name", "org_type", "project_type"]
+    for f in required:
+        if f not in data:
+            return jsonify({"error": f"缺少必填字段: {f}"}), 400
+    project = engine.create_project(
+        name=data["name"], org_name=data["org_name"],
+        org_type=data["org_type"], project_type=data["project_type"],
+        budget=float(data.get("budget", 0)),
+        year=int(data.get("year", 2024))
+    )
     return jsonify({"success": True, "project_id": project.id})
 
 
@@ -117,8 +127,12 @@ def api_get_stages():
 
 @app.route("/api/projects/<pid>/score", methods=["POST"])
 def api_submit_score(pid):
-    data = request.json
-    result = engine.submit_score(pid, data["dimension"], data["score"], data.get("evidence", ""))
+    data = request.json or {}
+    dim = data.get("dimension", "")
+    score = float(data.get("score", 0))
+    if not dim:
+        return jsonify({"error": "缺少 dimension 字段"}), 400
+    result = engine.submit_score(pid, dim, score, data.get("evidence", ""))
     return jsonify(result)
 
 
@@ -130,15 +144,21 @@ def api_calculate_score(pid):
 
 @app.route("/api/projects/<pid>/issue", methods=["POST"])
 def api_add_issue(pid):
-    data = request.json
-    result = engine.add_issue(pid, data["issue"], data.get("severity", "中"))
+    data = request.json or {}
+    issue = data.get("issue", "").strip()
+    if not issue:
+        return jsonify({"error": "缺少 issue 字段"}), 400
+    result = engine.add_issue(pid, issue, data.get("severity", "中"))
     return jsonify(result)
 
 
 @app.route("/api/projects/<pid>/suggestion", methods=["POST"])
 def api_add_suggestion(pid):
-    data = request.json
-    result = engine.add_suggestion(pid, data["suggestion"])
+    data = request.json or {}
+    suggestion = data.get("suggestion", "").strip()
+    if not suggestion:
+        return jsonify({"error": "缺少 suggestion 字段"}), 400
+    result = engine.add_suggestion(pid, suggestion)
     return jsonify(result)
 
 
@@ -210,4 +230,4 @@ if __name__ == "__main__":
     print(f"  底稿模板: {len(WORKING_PAPER_TEMPLATES)}个")
     print(f"\n  访问: http://localhost:5199")
     print("=" * 60 + "\n")
-    app.run(host="0.0.0.0", port=5199, debug=True)
+    app.run(host="127.0.0.1", port=5199, debug=True)
