@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>绩效评价审计智能体</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+    <div class="nav-brand">📊 绩效评价审计智能体</div>
+    <div class="nav-links">
+        <a href="/" class="active">首页</a>
+        <a href="/projects">项目管理</a>
+        <a href="/regulations">法规库</a>
+    </div>
+</nav>
+
+<main class="container">
+    <!-- Hero -->
+    <section class="hero">
+        <h1>业务流程驱动的绩效评价审计智能体</h1>
+        <p>内置法规库 · 8阶段业务流程 · 自动生成底稿和报告</p>
+        <div class="hero-actions">
+            <button class="btn btn-primary" onclick="showCreateModal()">➕ 新建审计项目</button>
+            <a href="/projects" class="btn btn-secondary">📋 查看项目列表</a>
+        </div>
+    </section>
+
+    <!-- 功能卡片 -->
+    <section class="feature-grid">
+        <div class="feature-card">
+            <div class="feature-icon">📚</div>
+            <h3>内置法规库</h3>
+            <p>预置《项目支出绩效评价管理办法》(财预〔2020〕10号)、《行政事业性国有资产管理条例》等核心法规</p>
+            <a href="/regulations" class="card-link">浏览法规 →</a>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔄</div>
+            <h3>8阶段业务流程</h3>
+            <p>承接→计划→指标体系→数据收集→分析评分→报告→质量控制→归档，全流程驱动</p>
+            <span class="card-hint">符合中注协业务指引</span>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📝</div>
+            <h3>自动生成底稿</h3>
+            <p>8种标准审计工作底稿模板，自动填充项目数据</p>
+            <span class="card-hint">一键生成</span>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📄</div>
+            <h3>自动生成报告</h3>
+            <p>7章节标准绩效评价报告，评分+评级+问题+建议自动汇总</p>
+            <span class="card-hint">符合财预〔2020〕10号格式</span>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🎯</div>
+            <h3>指标体系引擎</h3>
+            <p>决策-过程-产出-效益四维框架，支持项目支出/资产管理双模式</p>
+            <span class="card-hint">产出+效益≥60%权重</span>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔍</div>
+            <h3>案例参考</h3>
+            <p>国资委、上海大数据中心等真实绩效评价案例，支持对标分析</p>
+            <a href="#" onclick="loadCases()" class="card-link">查看案例 →</a>
+        </div>
+    </section>
+
+    <!-- 业务流程概览 -->
+    <section class="process-overview">
+        <h2>业务流程概览</h2>
+        <div class="process-timeline" id="processTimeline">
+            <!-- JS动态渲染 -->
+        </div>
+    </section>
+</main>
+
+<!-- 创建项目弹窗 -->
+<div class="modal" id="createModal">
+    <div class="modal-content">
+        <h2>新建绩效评价审计项目</h2>
+        <form id="createForm">
+            <div class="form-group">
+                <label>项目名称</label>
+                <input type="text" name="name" required placeholder="如：2024年度XX项目绩效评价">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>被评价单位</label>
+                    <input type="text" name="org_name" required placeholder="单位名称">
+                </div>
+                <div class="form-group">
+                    <label>单位类型</label>
+                    <select name="org_type">
+                        <option value="行政单位">行政单位</option>
+                        <option value="事业单位">事业单位</option>
+                        <option value="国有企业">国有企业</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>评价类型</label>
+                    <select name="project_type">
+                        <option value="项目支出">项目支出绩效评价</option>
+                        <option value="部门整体">部门整体支出绩效评价</option>
+                        <option value="资产管理">国有资产管理绩效评价</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>预算(万元)</label>
+                    <input type="number" name="budget" value="100" step="0.01">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>评价年度</label>
+                    <input type="number" name="year" value="2024">
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button type="submit" class="btn btn-primary">创建项目</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

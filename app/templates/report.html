@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>绩效评价报告 — 绩效评价审计智能体</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+    <div class="nav-brand">📊 绩效评价审计智能体</div>
+    <div class="nav-links">
+        <a href="/">首页</a>
+        <a href="/projects">项目管理</a>
+        <a href="/workflow/{{pid}}">流程</a>
+        <a href="/scoring/{{pid}}">评分</a>
+    </div>
+</nav>
+
+<main class="container" id="reportApp">
+    <div class="project-header" id="projectHeader"></div>
+
+    <div class="card">
+        <button class="btn btn-primary" onclick="generateReport()" id="btnGenerate">
+            🤖 自动生成绩效评价报告
+        </button>
+        <span class="hint" id="genHint">基于当前项目数据自动生成</span>
+    </div>
+
+    <div class="report-container" id="reportContainer" style="display:none">
+        <!-- JS动态渲染 -->
+    </div>
+</main>
+
+<script>
+const PID = "{{pid}}";
+</script>
+<script src="/static/js/report.js"></script>
+</body>
+</html>

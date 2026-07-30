@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>业务流程 — 绩效评价审计智能体</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+    <div class="nav-brand">📊 绩效评价审计智能体</div>
+    <div class="nav-links">
+        <a href="/">首页</a>
+        <a href="/projects">项目管理</a>
+        <a href="/scoring/{{pid}}">评分</a>
+        <a href="/report/{{pid}}">报告</a>
+    </div>
+</nav>
+
+<main class="container" id="workflowApp">
+    <!-- 项目信息头 -->
+    <div class="project-header" id="projectHeader">
+        <div class="spinner"></div>
+        <span>加载中...</span>
+    </div>
+
+    <!-- 流程进度条 -->
+    <div class="progress-section">
+        <div class="progress-bar-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="progress-text" id="progressText"></div>
+    </div>
+
+    <!-- 阶段导航 -->
+    <div class="stage-nav" id="stageNav">
+        <!-- JS动态渲染 -->
+    </div>
+
+    <!-- 当前阶段详情 -->
+    <div class="stage-detail" id="stageDetail">
+        <h2 id="stageName"></h2>
+        <p id="stageDesc"></p>
+        <div class="stage-meta">
+            <span class="badge" id="stageTime"></span>
+            <span class="badge" id="stageProgress"></span>
+        </div>
+    </div>
+
+    <!-- 检查清单 -->
+    <div class="card">
+        <h3>✅ 检查清单</h3>
+        <ul class="checklist" id="checklist"></ul>
+    </div>
+
+    <!-- 产出物 -->
+    <div class="card">
+        <h3>📦 阶段产出物</h3>
+        <ul class="output-list" id="outputList"></ul>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="action-bar">
+        <button class="btn btn-primary" id="btnAdvance" onclick="advanceStage()">
+            ➡️ 完成当前阶段，进入下一阶段
+        </button>
+        <div class="action-right">
+            <select id="jumpStage" onchange="goToStage(this.value)">
+                <option value="">跳转到阶段...</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 底稿生成区 -->
+    <div class="card">
+        <h3>📝 生成审计底稿</h3>
+        <div class="paper-grid" id="paperGrid"></div>
+    </div>
+
+    <!-- 评分预览 -->
+    <div class="card" id="scorePreview" style="display:none">
+        <h3>📊 评分预览</h3>
+        <div id="scoreContent"></div>
+    </div>
+</main>
+
+<script>
+const PID = "{{pid}}";
+</script>
+<script src="/static/js/workflow.js"></script>
+</body>
+</html>

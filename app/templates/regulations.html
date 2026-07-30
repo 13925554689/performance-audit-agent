@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>法规库 — 绩效评价审计智能体</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+    <div class="nav-brand">📊 绩效评价审计智能体</div>
+    <div class="nav-links">
+        <a href="/">首页</a>
+        <a href="/projects">项目管理</a>
+        <a href="/regulations" class="active">法规库</a>
+    </div>
+</nav>
+
+<main class="container">
+    <div class="page-header">
+        <h2>📚 绩效评价法规库</h2>
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="搜索法规..." oninput="searchRegs()">
+        </div>
+    </div>
+
+    <!-- 法规列表 -->
+    <div class="card">
+        <h3>核心法规</h3>
+        <div id="regList"></div>
+    </div>
+
+    <!-- 指标体系 -->
+    <div class="card">
+        <h3>📐 绩效评价指标体系</h3>
+        <div class="tab-bar">
+            <button class="tab active" onclick="switchTab('project')">项目支出</button>
+            <button class="tab" onclick="switchTab('asset')">国有资产管理</button>
+        </div>
+        <div id="indexSystem"></div>
+    </div>
+
+    <!-- 证据收集方法 -->
+    <div class="card">
+        <h3>🔍 证据收集方法</h3>
+        <div id="evidenceMethods"></div>
+    </div>
+
+    <!-- 案例 -->
+    <div class="card">
+        <h3>📖 参考案例</h3>
+        <div id="caseList"></div>
+    </div>
+</main>
+
+<script src="/static/js/regulations.js"></script>
+</body>
+</html>

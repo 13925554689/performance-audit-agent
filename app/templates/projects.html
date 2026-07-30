@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目管理 — 绩效评价审计智能体</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+    <div class="nav-brand">📊 绩效评价审计智能体</div>
+    <div class="nav-links">
+        <a href="/">首页</a>
+        <a href="/projects" class="active">项目管理</a>
+        <a href="/regulations">法规库</a>
+    </div>
+</nav>
+
+<main class="container">
+    <div class="page-header">
+        <h2>📋 审计项目管理</h2>
+        <button class="btn btn-primary" onclick="window.location='/'">➕ 新建项目</button>
+    </div>
+    <div class="project-list" id="projectList">
+        <div class="empty-state">暂无项目，点击上方按钮创建</div>
+    </div>
+</main>
+
+<script src="/static/js/projects.js"></script>
+</body>
+</html>

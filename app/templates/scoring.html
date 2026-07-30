@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>评分 — 绩效评价审计智能体</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+    <div class="nav-brand">📊 绩效评价审计智能体</div>
+    <div class="nav-links">
+        <a href="/">首页</a>
+        <a href="/projects">项目管理</a>
+        <a href="/workflow/{{pid}}">流程</a>
+        <a href="/report/{{pid}}">报告</a>
+    </div>
+</nav>
+
+<main class="container" id="scoringApp">
+    <div class="project-header" id="projectHeader"></div>
+
+    <div class="scoring-grid" id="scoringGrid">
+        <!-- JS 动态渲染评分卡片 -->
+    </div>
+
+    <div class="card" id="resultCard" style="display:none">
+        <h3>📊 评分结果</h3>
+        <div class="result-summary" id="resultSummary"></div>
+    </div>
+
+    <div class="card">
+        <h3>⚠️ 问题记录</h3>
+        <div class="inline-form">
+            <input type="text" id="issueInput" placeholder="输入发现的问题..." style="flex:1">
+            <select id="issueSeverity">
+                <option value="高">高</option>
+                <option value="中" selected>中</option>
+                <option value="低">低</option>
+            </select>
+            <button class="btn btn-sm" onclick="addIssue()">添加</button>
+        </div>
+        <ul class="issue-list" id="issueList"></ul>
+    </div>
+
+    <div class="card">
+        <h3>💡 改进建议</h3>
+        <div class="inline-form">
+            <input type="text" id="suggestionInput" placeholder="输入改进建议..." style="flex:1">
+            <button class="btn btn-sm" onclick="addSuggestion()">添加</button>
+        </div>
+        <ul class="suggestion-list" id="suggestionList"></ul>
+    </div>
+</main>
+
+<script>
+const PID = "{{pid}}";
+</script>
+<script src="/static/js/scoring.js"></script>
+</body>
+</html>
