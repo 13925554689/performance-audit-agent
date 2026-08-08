@@ -29,10 +29,10 @@ function searchRegs() {
 
 let currentTab = 'project';
 
-async function switchTab(tab) {
+async function switchTab(tab, btn) {
     currentTab = tab;
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    event.target.classList.add('active');
+    (btn || event.target).classList.add('active');  // ponytail: 显式传btn, 不依赖隐式event.target
     loadIndexSystem(tab);
 }
 

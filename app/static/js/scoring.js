@@ -65,7 +65,7 @@ function renderScoringGrid() {
 
 function onScoreChange(dim, input) {
     const dimScores = [];
-    gridEl = document.getElementById('scoringGrid');
+    const gridEl = document.getElementById('scoringGrid');
     // 找出当前维度的所有输入
     const dimCards = gridEl.querySelectorAll('.score-card');
     dimCards.forEach(card => {
@@ -117,9 +117,17 @@ async function showResult(result) {
 }
 
 function updateInputs() {
-    // 回填已有评分
+    // 回填已保存评分到维度卡片头部（后端只存维度总分，不存子指标明细）
     for (const [dim, score] of Object.entries(scores)) {
-        // ponytail: just update the score object, inputs are per-dimension
+        const header = Array.from(document.querySelectorAll('.score-card-header'))
+            .find(h => h.textContent.includes(dim));
+        if (header && !header.querySelector('.saved-score')) {
+            const span = document.createElement('span');
+            span.className = 'saved-score';
+            span.style.cssText = 'float:right;font-weight:normal;font-size:.85rem;color:#e2e8f0;background:rgba(255,255,255,.15);padding:0 .4rem;border-radius:4px';
+            span.textContent = `已保存: ${score} 分`;
+            header.appendChild(span);
+        }
     }
 }
 

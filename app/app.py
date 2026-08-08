@@ -71,7 +71,7 @@ def api_list_projects():
         "id": p.id, "name": p.name, "org_name": p.org_name,
         "org_type": p.org_type, "current_stage": p.current_stage,
         "total_stages": len(PROCESS_STAGES),
-        "percent": round(p.current_stage / len(PROCESS_STAGES) * 100),
+        "percent": min(100, round(p.current_stage / len(PROCESS_STAGES) * 100)),
         "total_score": p.total_score, "grade": p.grade,
         "created_at": p.created_at
     } for p in projects])
@@ -214,6 +214,20 @@ def api_paper_templates():
     return jsonify(templates)
 
 
+@app.route("/api/learn/patterns", methods=["GET"])
+def api_learn_patterns():
+    """ponytail: 从历史项目聚合学习 — 常见问题+建议"""
+    project_type = request.args.get("project_type")
+    return jsonify(engine.get_learned_patterns(project_type))
+
+
+@app.route("/api/learn/evolve", methods=["POST"])
+def api_learn_evolve():
+    """ponytail: 手动触发LLM进化分析"""
+    result = engine.evolve()
+    return jsonify(result)
+
+
 @app.route("/api/trace", methods=["GET"])
 def api_trace():
     """数据流跟踪日志 — 最近100条操作记录"""
@@ -230,4 +244,5 @@ if __name__ == "__main__":
     print(f"  底稿模板: {len(WORKING_PAPER_TEMPLATES)}个")
     print(f"\n  访问: http://localhost:5199")
     print("=" * 60 + "\n")
-    app.run(host="127.0.0.1", port=5199, debug=True)
+    # ponytail: debug 默认开(本地开发)；生产设 FLASK_DEBUG=0 关闭(禁用Werkzeug调试器RCE面)
+    app.run(host="127.0.0.1", port=5199, debug=os.environ.get("FLASK_DEBUG", "1") == "1")

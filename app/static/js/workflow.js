@@ -77,7 +77,7 @@ function jumpTo(stage) {
     API(`/api/projects/${PID}/go-to-stage`, {
         method: 'POST',
         body: JSON.stringify({ stage })
-    }).then(() => init());
+    }).then(() => init()).catch(err => alert('跳转失败: ' + err.message));
 }
 
 async function generatePaper(paperType) {

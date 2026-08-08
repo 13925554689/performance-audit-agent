@@ -8,6 +8,8 @@ from datetime import datetime
 from typing import Any, Optional
 import json
 import os
+import urllib.request
+import threading
 from collections import deque
 
 # ponytail: import once at the top
@@ -17,12 +19,43 @@ from regulations import (
 
 # ponytail: ring buffer, 100 entries, overwrite oldest
 _trace = deque(maxlen=100)
+# ponytail: 秒级时间戳 PID 会碰撞，用进程内序号兜底防同秒覆盖
+_pid_seq = 0
+# ponytail: 单写锁(RLock可重入, create_project外层+_save_projects内层), 防 evolve 后台线程并发写
+_save_lock = threading.RLock()
 
 
 def _log(action, pid, detail=""):
     _trace.append({
         "ts": datetime.now().isoformat(), "action": action, "pid": pid, "detail": detail
     })
+
+# ponytail: stdlib urllib → LLM, zero-dependency. Falls back if no key set.
+def _call_llm(system_prompt: str, user_prompt: str) -> str | None:
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        return None
+    base = os.environ.get("OPENAI_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
+    model = os.environ.get("EVOLVE_MODEL", "deepseek-chat")
+    body = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "temperature": 0.3, "max_tokens": 2000
+    }).encode()
+    req = urllib.request.Request(
+        f"{base}/chat/completions",
+        data=body,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    )
+    try:
+        resp = json.loads(urllib.request.urlopen(req, timeout=60).read())
+        return resp["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"[engine] _call_llm failed: {e}", file=__import__("sys").stderr)
+        return None
 
 # ═══════════════════════════════════════════════════════════
 # 8阶段业务流程定义
@@ -170,43 +203,61 @@ class ProcessEngine:
         return os.path.join(self.data_dir, "projects.json")
 
     def _load_projects(self):
-        """加载已保存的项目"""
+        """加载已保存的项目 — 逐条容错，坏项跳过，不整库丢弃"""
         path = self._get_project_file()
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                for pid, pdict in data.items():
-                    self._projects[pid] = AuditProject(**pdict)
-            except (json.JSONDecodeError, KeyError, TypeError):
-                # ponytail: corrupt file → skip, log to stderr
+            except (json.JSONDecodeError, OSError):
                 import sys
                 print(f"[engine] corrupt projects.json, resetting", file=sys.stderr)
                 self._projects = {}
                 self._save_projects()
+                return
+            import sys
+            for pid, pdict in data.items():
+                try:
+                    self._projects[pid] = AuditProject(**pdict)
+                except (KeyError, TypeError, ValueError):
+                    print(f"[engine] skipping corrupt project {pid}", file=sys.stderr)
 
     def _save_projects(self):
-        """保存项目到磁盘 — 原子写入防数据损坏"""
+        """保存项目到磁盘 — 原子写入防数据损坏，单写锁防并发丢更新"""
         import tempfile
         path = self._get_project_file()
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        data = {pid: asdict(p) for pid, p in self._projects.items()}
-        # ponytail: write temp+rename, avoids corruption on crash
-        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".json")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, path)
-        except Exception:
-            os.unlink(tmp)
-            raise
+        with _save_lock:
+            data = {pid: asdict(p) for pid, p in self._projects.items()}
+            # ponytail: write temp+rename, avoids corruption on crash
+            fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".json")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                os.replace(tmp, path)
+            except Exception:
+                os.unlink(tmp)
+                raise
+
+    # ═══════════════════════════════════════════
+    # 进度统计（内部用）
+    # ═══════════════════════════════════════════
+
+    def _count_completed(self) -> int:
+        return sum(1 for p in self._projects.values() if p.total_score > 0)
 
     def create_project(self, **kwargs) -> AuditProject:
         """创建新的审计项目"""
-        pid = f"PA{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        project = AuditProject(id=pid, **kwargs)
-        self._projects[pid] = project
-        self._save_projects()
+        global _pid_seq
+        # ponytail: 类型校验（API 层只校验必填，这里兜底类型）
+        kwargs["budget"] = float(kwargs.get("budget", 0) or 0)
+        kwargs["year"] = int(kwargs.get("year", 2024) or 2024)
+        with _save_lock:
+            _pid_seq += 1
+            pid = f"PA{datetime.now().strftime('%Y%m%d%H%M%S')}{_pid_seq:02d}"
+            project = AuditProject(id=pid, **kwargs)
+            self._projects[pid] = project
+            self._save_projects()
         _log("create", pid, f"{kwargs.get('name','?')} @{kwargs.get('org_name','?')}")
         return project
 
@@ -335,7 +386,7 @@ class ProcessEngine:
             },
             "all_stages": all_stages,
             "progress": f"{project.current_stage}/{len(PROCESS_STAGES)}",
-            "percent": round(project.current_stage / len(PROCESS_STAGES) * 100)
+            "percent": min(100, round(project.current_stage / len(PROCESS_STAGES) * 100))  # completed(9/8) 不溢出
         }
 
     def submit_score(self, pid: str, dimension: str, score: float, evidence: str = "") -> dict:
@@ -344,8 +395,11 @@ class ProcessEngine:
         if not project:
             return {"error": "项目不存在"}
 
-        # ponytail: clamp score to valid range
-        max_score = next((d["weight"] for d in PERFORMANCE_INDEX_SYSTEM["dimensions"] if d["name"] == dimension), 100)
+        # ponytail: clamp score to valid range; reject unknown dimension (no silent max=100)
+        dim_def = next((d for d in PERFORMANCE_INDEX_SYSTEM["dimensions"] if d["name"] == dimension), None)
+        if dim_def is None:
+            return {"error": f"未知评分维度: {dimension}"}
+        max_score = dim_def["weight"]
         score = max(0, min(score, max_score))
 
         project.scores[dimension] = score
@@ -369,15 +423,16 @@ class ProcessEngine:
         total = sum(project.scores.values())
         project.total_score = total
 
-        # 评级
+        # 评级 — 法规语义 ≥min 命中（优≥90/良≥80/中≥60/差<60），闭区间会漏 89.5 等非整数
         for g in PERFORMANCE_INDEX_SYSTEM["scoring_rule"]["grades"]:
-            if g["min"] <= total <= g["max"]:
+            if total >= g["min"]:
                 project.grade = g["grade"]
                 break
 
         project.updated_at = datetime.now().isoformat()
         self._save_projects()
         _log("calculate", pid, f"total={total} grade={project.grade}")
+        self._maybe_evolve()  # ponytail: background LLM analysis every 3 scored projects
 
         return {
             "total_score": total,
@@ -394,6 +449,8 @@ class ProcessEngine:
         project = self._projects.get(pid)
         if not project:
             return {"error": "项目不存在"}
+        if severity not in ("高", "中", "低"):
+            severity = "中"  # ponytail: 枚举兜底，不接收任意字符串
         project.issues.append({
             "issue": issue,
             "severity": severity,
@@ -413,6 +470,101 @@ class ProcessEngine:
         })
         self._save_projects()
         return {"success": True, "suggestion_count": len(project.suggestions)}
+
+    def get_learned_patterns(self, project_type: str = None) -> dict:
+        """ponytail: 聚合历史项目 + 加载AI进化洞察"""
+        from collections import Counter
+        issues, suggestions = [], []
+        for p in self._projects.values():
+            if project_type and p.project_type != project_type:
+                continue
+            if p.total_score > 0:
+                for item in p.issues:
+                    issues.append(item["issue"])
+                for item in p.suggestions:
+                    suggestions.append(item["suggestion"])
+        result = {
+            "common_issues": [{"text": k, "count": v} for k, v in Counter(issues).most_common(10)],
+            "common_suggestions": [{"text": k, "count": v} for k, v in Counter(suggestions).most_common(10)],
+            "total_projects_analyzed": sum(1 for p in self._projects.values() if p.total_score > 0)
+        }
+        evo = self._load_evolution()
+        if evo:
+            result["evolution"] = evo
+        return result
+
+    # ═══════════════════════════════════════════════
+    #  AI 自动进化引擎
+    # ═══════════════════════════════════════════════
+
+    def _load_evolution(self) -> dict | None:
+        path = os.path.join(self.data_dir, "evolution.json")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                return None  # 损坏 → 降级返回空，不 crash 调用方
+        return None
+
+    def evolve(self) -> dict:
+        """ponytail: LLM分析全部已完成项目，自主生成权重调整/新指标/风险模式建议"""
+        # ponytail: snapshot under GIL, then daemon thread uses copy only
+        projects_snapshot = [
+            p for p in self._projects.values() if p.total_score > 0
+        ]
+        if len(projects_snapshot) < 2:
+            return {"error": "至少需要2个已完成项目", "projects": len(projects_snapshot)}
+
+        summary = [{
+            "name": p.name, "org_type": p.org_type, "project_type": p.project_type,
+            "total_score": p.total_score, "grade": p.grade, "scores": p.scores,
+            "issues": [i["issue"] for i in p.issues],
+            "suggestions": [s["suggestion"] for s in p.suggestions]
+        } for p in projects_snapshot]
+
+        system = """你是绩效评价审计专家。分析历史项目数据，输出JSON：
+{
+  "weight_adjustments": [{"dimension": "...", "current_weight": N, "suggested_weight": N, "reason": "..."}],
+  "new_indicators": [{"name": "...", "dimension": "...", "scoring_criteria": "..."}],
+  "common_risk_patterns": [{"pattern": "...", "frequency": "高/中/低", "suggested_checklist": "..."}],
+  "evolution_summary": "综合分析一段话"
+}
+只输出JSON。"""
+
+        user = json.dumps(summary, ensure_ascii=False, indent=2)
+        insight = _call_llm(system, user[:12000])
+        if not insight:
+            return {"error": "未配置OPENAI_API_KEY/DEEPSEEK_API_KEY环境变量。设置后重试。"}
+
+        try:
+            parsed = json.loads(insight)
+        except json.JSONDecodeError:
+            parsed = {"raw_insight": insight}
+
+        import tempfile
+        path = os.path.join(self.data_dir, "evolution.json")
+        fd, tmp = tempfile.mkstemp(dir=self.data_dir, suffix=".json")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump({
+                    "generated_at": datetime.now().isoformat(),
+                    "projects_analyzed": len(projects_snapshot),
+                    "insights": parsed
+                }, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        except Exception:
+            os.unlink(tmp)
+            raise
+
+        _log("evolve", "system", f"analyzed {len(projects_snapshot)} projects → evolution.json")
+        return {"success": True, "projects_analyzed": len(projects_snapshot), "insights": parsed}
+
+    def _maybe_evolve(self):
+        """ponytail: 每3个新项目触发一次后台LLM进化"""
+        completed = sum(1 for p in self._projects.values() if p.total_score > 0)
+        if completed >= 3 and completed % 3 == 0:
+            threading.Thread(target=self.evolve, daemon=True).start()
 
     def generate_working_paper(self, pid: str, paper_type: str) -> dict:
         """生成工作底稿"""
@@ -458,8 +610,9 @@ class ProcessEngine:
         total_score = project.total_score or sum(project.scores.values())
         grade = project.grade
         if not grade:
+            # 与 calculate_final_score 同算法：≥min 命中（避免 89.5 等非整数落空）
             for g in PERFORMANCE_INDEX_SYSTEM["scoring_rule"]["grades"]:
-                if g["min"] <= total_score <= g["max"]:
+                if total_score >= g["min"]:
                     grade = g["grade"]
                     break
 
