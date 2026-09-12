@@ -137,6 +137,7 @@ class AuditProject:
     evidence_files: list = field(default_factory=list)
     stage_records: dict = field(default_factory=dict)   # v7.2: {stage_id: {"files":[...],"notes":[...]}} 每阶段导入的资料/沟通协调/前置情况记录
     plan_adjustments: list = field(default_factory=list) # v7.2: AI根据新资料给出的后续流程调整 [{ts,focus,changes:[{stage_id,change,reason}]}]
+    flow_overrides: dict = field(default_factory=dict)  # v7.3: {stage_id: {guides:[...], applied_at}} 项目级流程改写(已应用的AI调整)
     source_doc: dict = field(default_factory=dict)   # v7: 导入的合同/约定书 原件+抽取结果
     summary: str = ""                                # v7: 结项一句话教训
     archived_at: str = ""                            # v7: 归档时间(空=未归档)
@@ -336,6 +337,10 @@ class ProcessEngine:
 
         # 兼容旧字段: key_points → checklist
         checklist = stage.get("checklist") or stage.get("key_points", [])
+        # v7.3: 项目级流程覆盖(已应用的AI调整)合并进指引/重点 — 不动全局模板
+        ov = project.flow_overrides.get(stage["id"], {})
+        guides = stage.get("guides", []) + ov.get("guides", [])
+        key_points = stage.get("key_points", []) + ov.get("key_points", [])
 
         return {
             "project": asdict(project),
@@ -348,9 +353,9 @@ class ProcessEngine:
                 "materials_needed": stage.get("materials_needed", []),
                 "regulations": stage.get("regulations", []),
                 "prerequisites": stage.get("prerequisites", []),
-                "guides": stage.get("guides", []),
+                "guides": guides,
                 "comm_coord": stage.get("comm_coord", []),
-                "key_points": stage.get("key_points", []),
+                "key_points": key_points,
                 "outputs": stage["outputs"],
                 "estimated_time": stage["estimated_time"],
                 # v7.2: 该阶段已导入的文件+沟通/前置记录 (空列表前端自然隐藏)

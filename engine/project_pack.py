@@ -381,6 +381,41 @@ def pending_adjustments(pid: str) -> list:
             if any(c.get("stage_id") == _PROCESS_STAGES[min(cur, 8) - 1]["id"] for c in a.get("changes", []))]
 
 
+def apply_adjustments(pid: str) -> dict:
+    """AI调整建议 → 改写本项目工作流模板(项目级覆盖, 不动全局stages.py)。
+
+    每个 change 追加到该阶段: guides/key_points 去重后加"🔧AI调整:"前缀条目,
+    同时在 stage_status 同级记录 applied_adjustments 留痕。返回逐条应用结果。
+    """
+    project = engine.get_project(pid)
+    if not project or not project.plan_adjustments:
+        return {"error": "无可应用的调整建议"}
+    # 项目级流程覆盖: 写入project.flow_overrides, get_stage_detail/begin优先读取
+    applied, seen = [], set()
+    for a in project.plan_adjustments:
+        if a.get("applied"):
+            continue   # 已应用过的批次跳过(幂等)
+        for c in a.get("changes", []):
+            sid, change, reason = c.get("stage_id"), c.get("change", ""), c.get("reason", "")
+            if not sid or not change or (sid, change) in seen:
+                continue
+            seen.add((sid, change))
+            ov = project.flow_overrides.setdefault(sid, {"guides": [], "key_points": [], "applied_at": ""})
+            entry = f"🔧AI调整: {change}（依据: {reason}）"
+            target = ov["guides"]   # 调整建议本质是执行动作 → 进操作指引
+            if entry not in target:
+                target.append(entry)
+            ov["applied_at"] = datetime.now().isoformat()
+            applied.append({"stage_id": sid, "entry": entry})
+        a["applied"] = True
+    if not applied:
+        return {"error": "调整建议均已应用过"}
+    project.updated_at = datetime.now().isoformat()
+    engine._save_projects()
+    _log("apply_adjustments", pid, f"applied={len(applied)}")
+    return {"success": True, "applied": applied}
+
+
 # ── 3. 结项 → 知识沉淀 ─────────────────────────────────
 
 ARCHIVE_SYSTEM = """你是绩效评价知识管理专家。分析这个已完成项目的全量数据，提炼可复用经验，输出JSON(只输出JSON):

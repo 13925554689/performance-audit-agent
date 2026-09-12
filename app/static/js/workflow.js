@@ -111,7 +111,7 @@ async function saveStageNote() {
 
 async function runAdjustPlan() {
     const box = document.getElementById('adjustResult');
-    box.innerHTML = '<div class="spinner"></div> AI分析中(深度推理, 约30-60秒)...';
+    box.innerHTML = '<div class="spinner"></div> AI分析中(约20-40秒)...';
     const res = await API(`/api/projects/${PID}/adjust-plan`, { method: 'POST' });
     if (res.error) { box.innerHTML = `<p style="color:#ef4444">❌ ${res.error}</p>`; return; }
     const stageName = id => ((projectData?.all_stages || []).find(s => s.id === id) || {}).name || id;
@@ -121,8 +121,18 @@ async function runAdjustPlan() {
             ${res.changes.map(c => `<div style="margin:.5rem 0;padding:.4rem .6rem;background:#fff;border-radius:4px">
                 <b>${esc(stageName(c.stage_id))}:</b> ${esc(c.change)}
                 <br><small style="color:#666">依据: ${esc(c.reason)}</small></div>`).join('')}
-            <small style="color:#92400e">建议已留痕到项目包，执行时请对照调整。</small>
+            <button class="btn btn-primary" style="margin-top:.5rem" onclick="applyAdjustments(this)">✔ 应用到本项目工作流</button>
+            <small style="color:#92400e;margin-left:.5rem">应用后写入对应阶段操作指引(项目级, 可留痕追溯)</small>
         </div>` : `<p style="color:#059669">✅ ${esc(res.focus || 'AI分析完成')}: 后续流程无需调整。</p>`;
+}
+
+async function applyAdjustments(btn) {
+    if (!confirm('将AI调整写入本项目工作流模板？(幂等, 不影响全局模板)')) return;
+    btn.disabled = true; btn.textContent = '应用中...';
+    const res = await API(`/api/projects/${PID}/apply-adjustments`, { method: 'POST' });
+    if (res.error) { alert(res.error); btn.disabled = false; btn.textContent = '✔ 应用到本项目工作流'; return; }
+    alert(`已应用 ${res.applied.length} 条调整到对应阶段指引`);
+    init();
 }
 
 function renderListCard(title, items, cls = '') {

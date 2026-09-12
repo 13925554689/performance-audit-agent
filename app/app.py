@@ -308,7 +308,7 @@ from engine.project_pack import (
     extract_project_fields, save_source_file, attach_source,
     build_pack, archive_project, load_knowledge_base,
     learn_and_create, export_archive_report,
-    stage_upload, stage_note, adjust_plan,
+    stage_upload, stage_note, adjust_plan, apply_adjustments,
 )
 from engine import retrieval
 
@@ -335,6 +335,12 @@ def api_stage_note(pid, sid):
 def api_adjust_plan(pid):
     """AI根据已导入资料/新情况 → 后续阶段流程调整建议(留痕到项目包)"""
     return jsonify(adjust_plan(pid))
+
+
+@app.route("/api/projects/<pid>/apply-adjustments", methods=["POST"])
+def api_apply_adjustments(pid):
+    """确认应用: AI调整 → 改写本项目工作流(项目级覆盖, 幂等, 留痕flow_overrides)"""
+    return jsonify(apply_adjustments(pid))
 
 
 @app.route("/api/import/batch", methods=["POST"])
