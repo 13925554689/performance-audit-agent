@@ -44,7 +44,7 @@ def _fallback_vec(text: str) -> list[float]:
     import re
     v = [0.0] * 1024
     for w in re.findall(r"[\u4e00-\u9fff]{2,6}|[a-zA-Z0-9]+", text.lower()):
-        v[hashlib.md5(w.encode()).digest()[:4].__hash__() % 1024] += 1.0
+        v[int.from_bytes(hashlib.md5(w.encode()).digest()[:4], "big") % 1024] += 1.0  # ponytail: 确定性hash(原bytes.__hash__进程加盐, 重启后缓存坐标漂移)
     return v
 
 
@@ -86,8 +86,16 @@ def _load_index() -> dict:
 
 
 def _save_index(idx: dict):
+    import tempfile
     os.makedirs(os.path.dirname(IDX_PATH), exist_ok=True)
-    json.dump(idx, open(IDX_PATH, "w", encoding="utf-8"), ensure_ascii=False)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(IDX_PATH), suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(idx, f, ensure_ascii=False)
+        os.replace(tmp, IDX_PATH)   # ponytail: 原子替换, 并发search不交错写坏
+    except Exception:
+        os.unlink(tmp)
+        raise
 
 
 def search(query: str, top_k: int = 5, kind: str = None) -> dict:
@@ -100,9 +108,9 @@ def search(query: str, top_k: int = 5, kind: str = None) -> dict:
 
     fp = _fingerprint(docs)
     idx = _load_index()
-    if idx.get("fingerprint") != fp or idx.get("v") != 2:   # v2: 键序 kind|ref_id
+    if idx.get("fingerprint") != fp or idx.get("v") != 3:   # v3: fallback向量改确定性hash, 旧缓存坐标系作废
         vecs, source = _embed([d["text"] for d in docs])
-        idx = {"v": 2, "fingerprint": fp, "source": source, "built_at": datetime.now().isoformat(),
+        idx = {"v": 3, "fingerprint": fp, "source": source, "built_at": datetime.now().isoformat(),
                "dim": len(vecs[0]), "docs": {d["kind"] + "|" + d["ref_id"]: v for d, v in zip(docs, vecs)}}
         _save_index(idx)
 

@@ -75,7 +75,7 @@ function renderStageDetail(cur) {
         ${rec.files.length ? `<b>已上传 (${rec.files.length}):</b>` + rec.files.map(f =>
             `<span class="badge" style="margin:.15rem">📎 ${esc(f.name)} (${Math.round(f.size / 1024)}KB)</span>`).join('') : ''}
         ${rec.notes.length ? `<div style="margin-top:.5rem"><b>已记录 (${rec.notes.length}):</b>` + rec.notes.map(n =>
-            `<div class="comm-item" style="border-left:3px solid #0ea5e9;padding:.4rem .8rem;margin:.4rem 0;background:#f8fafc;border-radius:4px"><b>${{ comm: '💬沟通', prereq: '⚡前置', note: '📝备注' }[n.type] || n.type}</b> <small style="color:#888">${(n.at || '').slice(0, 16)}</small><div style="font-size:.9rem">${esc(n.text)}</div></div>`).join('') + '</div>' : ''}
+            `<div class="comm-item" style="border-left:3px solid #0ea5e9;padding:.4rem .8rem;margin:.4rem 0;background:#f8fafc;border-radius:4px"><b>${{ comm: '💬沟通', prereq: '⚡前置', note: '📝备注' }[n.type] || '📝备注'}</b> <small style="color:#888">${(n.at || '').slice(0, 16)}</small><div style="font-size:.9rem">${esc(n.text)}</div></div>`).join('') + '</div>' : ''}
         ${!rec.files.length && !rec.notes.length ? '<span style="color:#94a3b8">本阶段暂无导入记录</span>' : ''}
     `;
 }

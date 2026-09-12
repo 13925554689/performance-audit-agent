@@ -456,7 +456,11 @@ def archive_project(pid: str) -> dict:
         "分类": pack["regulations"]["index_name"],
     }, ensure_ascii=False)
     raw = _call_llm(ARCHIVE_SYSTEM, user[:10000], max_tokens=2000, deep=True)
-    lessons = {"raw": raw[:2000]} if not raw else _safe_json(raw)
+    if not raw:
+        return {"error": "LLM调用失败(deepseek/zhipu均不可用)，未落知识库，请稍后重试"}  # ponytail: 审查P2 — 畸形lessons不进KB污染学习池
+    lessons = _safe_json(raw)
+    if "one_line_lesson" not in lessons:
+        return {"error": "LLM返回结构异常，未落知识库，请重试", "raw": str(lessons)[:200]}
 
     entry = {
         "pid": pid, "name": project.name, "org_type": project.org_type,
