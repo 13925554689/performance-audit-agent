@@ -59,9 +59,17 @@ def extract_project_fields(text: str) -> dict:
             return {"error": "LLM返回非JSON", "raw": raw[:300]}
 
 
+def _safe_pid_dir(pid: str) -> str:
+    """ponytail: pid必须严格是PA+数字, 防URL注入穿越outputs目录(全部文件写入共用)"""
+    import re
+    if not re.fullmatch(r"PA\d{16,18}", pid or ""):
+        raise ValueError(f"非法项目编号: {pid!r}")
+    return os.path.join(ROOT, "outputs", pid)
+
+
 def save_source_file(pid: str, filename: str, content: bytes) -> str:
     """合同原件存入项目包 outputs/<pid>/source/"""
-    dest_dir = os.path.join(ROOT, "outputs", pid, "source")
+    dest_dir = os.path.join(_safe_pid_dir(pid), "source")
     os.makedirs(dest_dir, exist_ok=True)
     safe = filename.replace("/", "_").replace("\\", "_")
     dest = os.path.join(dest_dir, safe)
@@ -107,7 +115,7 @@ def build_pack(pid: str) -> dict:
     } for s in __import__("engine", fromlist=["PROCESS_STAGES"]).PROCESS_STAGES]
 
     # 项目资料: 上传原件 + 生成的成果文件
-    pdir = os.path.join(ROOT, "outputs", pid)
+    pdir = _safe_pid_dir(pid)
     files = []
     for sub in ("source", "deliverables"):
         d = os.path.join(pdir, sub)
@@ -142,46 +150,50 @@ def learn_and_create(extracted: dict, files: list[dict]) -> dict:
     from . import engine
     created = []
     for f in files:
-        import tempfile
-        ext = os.path.splitext(f["filename"])[1].lower()
-        if ext not in (".pdf", ".docx", ".doc", ".txt", ".md"):
-            created.append({"filename": f["filename"], "error": f"不支持的格式: {ext}"})
-            continue
-        fd, tmp = tempfile.mkstemp(suffix=ext)
-        os.close(fd)  # ponytail: Windows mkstemp句柄不关会锁文件
         try:
-            with open(tmp, "wb") as fh:
-                fh.write(f["bytes"])
-            text = _doc_to_text(tmp)
-        finally:
-            try:
-                os.unlink(tmp)
-            except PermissionError:
-                pass
-        if len(text.strip()) < 50:
-            created.append({"filename": f["filename"], "error": "文本过少(可能为扫描件)"})
-            continue
-        extracted = dict(extracted or {})
-        fields = extract_project_fields(text)
-        fields.update({k: v for k, v in extracted.items() if v})   # 手填覆盖LLM
-        if fields.get("error"):
-            created.append({"filename": f["filename"], "error": fields["error"]})
-            continue
-        proj = engine.create_project(
-            name=fields.get("project_name") or os.path.splitext(f["filename"])[0],
-            org_name=fields.get("org_name") or "待补充",
-            org_type=fields.get("org_type") or "事业单位",
-            project_type=fields.get("project_type") or "项目支出",
-            budget=float(fields.get("budget") or 0),
-            year=int(fields.get("year") or datetime.now().year),
-        )
-        pid = proj.id
-        path = save_source_file(pid, f["filename"], f["bytes"])
-        attach_source(pid, path, fields)
-        created.append({"filename": f["filename"], "pid": pid,
-                        "name": proj.name, "confidence": fields.get("confidence")})
+            created.append(_import_one(extracted, f))
+        except Exception as e:   # ponytail: 单份失败不拖垮整批, 逐份报告
+            created.append({"filename": f["filename"], "error": f"{type(e).__name__}: {e}"})
     return {"success": True, "created": created,
             "ok": sum(1 for c in created if c.get("pid"))}
+
+
+def _import_one(extracted: dict, f: dict) -> dict:
+    """learn_and_create 内层: 单份文件抽取+建项+入库。抛异常由外层捕获。"""
+    ext = os.path.splitext(f["filename"])[1].lower()
+    if ext not in (".pdf", ".docx", ".doc", ".txt", ".md"):
+        return {"filename": f["filename"], "error": f"不支持的格式: {ext}"}
+    fd, tmp = tempfile.mkstemp(suffix=ext)
+    os.close(fd)  # ponytail: Windows mkstemp句柄不关会锁文件
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(f["bytes"])
+        text = _doc_to_text(tmp)
+    finally:
+        try:
+            os.unlink(tmp)
+        except PermissionError:
+            pass
+    if len(text.strip()) < 50:
+        return {"filename": f["filename"], "error": "文本过少(可能为扫描件)"}
+    extracted = dict(extracted or {})
+    fields = extract_project_fields(text)
+    fields.update({k: v for k, v in extracted.items() if v})   # 手填覆盖LLM
+    if fields.get("error"):
+        return {"filename": f["filename"], "error": fields["error"]}
+    proj = engine.create_project(
+        name=fields.get("project_name") or os.path.splitext(f["filename"])[0],
+        org_name=fields.get("org_name") or "待补充",
+        org_type=fields.get("org_type") or "事业单位",
+        project_type=fields.get("project_type") or "项目支出",
+        budget=float(fields.get("budget") or 0),
+        year=int(fields.get("year") or datetime.now().year),
+    )
+    pid = proj.id
+    path = save_source_file(pid, f["filename"], f["bytes"])
+    attach_source(pid, path, fields)
+    return {"filename": f["filename"], "pid": pid,
+            "name": proj.name, "confidence": fields.get("confidence")}
 
 
 def export_archive_report(pid: str) -> dict:
@@ -279,7 +291,7 @@ def export_archive_report(pid: str) -> dict:
     else:
         p("项目未归档或无提炼结果。可先在项目包页执行「结项归档」。")
 
-    out = os.path.join(ROOT, "outputs", pid, "deliverables", f"归档报告_{pid}.docx")
+    out = os.path.join(_safe_pid_dir(pid), "deliverables", f"归档报告_{pid}.docx")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     doc.save(out)
     return {"success": True, "path": out}
@@ -296,7 +308,7 @@ def stage_upload(pid: str, stage_id: str, filename: str, content: bytes) -> dict
     if stage_id not in stage_ids:
         return {"error": f"未知阶段: {stage_id}"}
     safe = filename.replace("/", "_").replace("\\", "_")
-    dest = os.path.join(ROOT, "outputs", pid, "stages", stage_id)
+    dest = os.path.join(_safe_pid_dir(pid), "stages", stage_id)
     os.makedirs(dest, exist_ok=True)
     path = os.path.join(dest, safe)
     with open(path, "wb") as f:
@@ -452,16 +464,18 @@ def archive_project(pid: str) -> dict:
         "scores": project.scores, "total_score": project.total_score, "grade": project.grade,
         "lessons": lessons, "archived_at": datetime.now().isoformat(),
     }
-    kb = load_knowledge_base()
-    kb = [e for e in kb if e["pid"] != pid] + [entry]   # ponytail: 重归档=覆盖
-    tmp_fd, tmp = tempfile.mkstemp(dir=os.path.dirname(KB_PATH) if os.path.isdir(os.path.dirname(KB_PATH)) else ROOT, suffix=".json")
-    try:
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-            json.dump(kb, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, KB_PATH)
-    except Exception:
-        os.unlink(tmp)
-        raise
+    from engine import _save_lock
+    with _save_lock:   # ponytail: 复用engine同一把锁, 防并发归档read-modify-write丢条目
+        kb = load_knowledge_base()
+        kb = [e for e in kb if e["pid"] != pid] + [entry]   # ponytail: 重归档=覆盖
+        tmp_fd, tmp = tempfile.mkstemp(dir=os.path.dirname(KB_PATH) if os.path.isdir(os.path.dirname(KB_PATH)) else ROOT, suffix=".json")
+        try:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                json.dump(kb, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, KB_PATH)
+        except Exception:
+            os.unlink(tmp)
+            raise
 
     project.archived_at = datetime.now().isoformat()
     project.summary = lessons.get("one_line_lesson", "")

@@ -13,3 +13,9 @@ data/*.json.bak
 *.log
 data/
 docs/markdown/zip_extracted/
+
+# 客户源材料防误提交(审计L4建议)
+*.pdf
+*.docx
+*.zip
+*.doc

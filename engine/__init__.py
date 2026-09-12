@@ -411,11 +411,9 @@ class ProcessEngine:
         _log("calculate", pid, f"total={total} grade={project.grade}")
         self._maybe_evolve()  # ponytail: background LLM analysis every 3 scored projects
 
-        # 勾稽自动校验 — 引用本项目实际使用的指标体系(分类不同则维度不同)
+        # 勾稽自动校验 — ponytail: 用标准体系校验(submit_score只接受标准4维, 校验须同源, 否则非项目支出分类全误报)
         from engine.reconcile import run_checks
-        from regulations import _CLASSIFICATION_INDEX, _INDEX_MAP
-        idx_key = _CLASSIFICATION_INDEX.get(self.classification_for(project) or "", "project")
-        reconciliation = run_checks(project, _INDEX_MAP.get(idx_key))
+        reconciliation = run_checks(project, PERFORMANCE_INDEX_SYSTEM)
         for f in reconciliation:
             _log("reconcile", pid, f"[{f['level']}] {f['check']}: {f['detail']}")
 
