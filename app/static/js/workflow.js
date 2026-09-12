@@ -1,4 +1,4 @@
-// workflow.js — 业务流程页面
+// workflow.js — 业务流程页面 v6.0
 // ponytail: fetch + DOM, no frameworks
 
 let projectData = null;
@@ -12,7 +12,8 @@ async function init() {
     const p = res.project;
     document.getElementById('projectHeader').innerHTML = `
         <h2>${p.name}</h2>
-        <div class="org-info">${p.org_name} | ${p.org_type} | ${p.project_type} | 预算:${p.budget}万元 | ${p.year}年</div>
+        <div class="org-info">${p.org_name} | ${p.org_type} | ${p.project_type} | 预算:${p.budget}万元 | ${p.year}年
+            <a href="/workplan/${PID}" style="margin-left:.5rem">📅 工作计划 →</a></div>
     `;
 
     // Progress
@@ -28,34 +29,75 @@ async function init() {
     }).join('');
 
     // Stage detail
-    const cur = res.current;
+    renderStageDetail(res.current);
+
+    // Jump select
+    const sel = document.getElementById('jumpStage');
+    if (!sel.options.length) {
+        res.all_stages.forEach(s => {
+            sel.innerHTML += `<option value="${s.stage}">${s.stage}. ${s.name}</option>`;
+        });
+    }
+    sel.value = '';
+
+    loadPaperTemplates();
+    if (Object.keys(p.scores).length > 0) showScorePreview(p);
+}
+
+function renderStageDetail(cur) {
     document.getElementById('stageName').textContent = `第${cur.stage_num}阶段: ${cur.name}`;
     document.getElementById('stageDesc').textContent = cur.description;
     document.getElementById('stageTime').textContent = `⏱ ${cur.estimated_time}`;
     document.getElementById('stageProgress').textContent = `${cur.stage_num}/${cur.total}`;
 
-    // Checklist
-    document.getElementById('checklist').innerHTML = cur.checklist.map(c =>
+    // 检查清单/工作重点
+    document.getElementById('checklist').innerHTML = (cur.checklist || []).map(c =>
         `<li>${c}</li>`).join('');
 
-    // Outputs
-    document.getElementById('outputList').innerHTML = cur.outputs.map(o =>
+    // 阶段成果
+    document.getElementById('outputList').innerHTML = (cur.outputs || []).map(o =>
         `<li>📄 ${o}</li>`).join('');
 
-    // Jump select
-    const sel = document.getElementById('jumpStage');
-    res.all_stages.forEach(s => {
-        sel.innerHTML += `<option value="${s.stage}">${s.stage}. ${s.name}</option>`;
-    });
-    sel.value = '';
+    // v6.0 六大工作包区块
+    const extra = document.getElementById('stageExtras');
+    extra.innerHTML = `
+        ${renderListCard('📥 前置条件', (cur.prerequisites || []).map(x => `⚡ ${x}`))}
+        ${renderListCard('📁 该阶段需要的资料', (cur.materials_needed || []).map(x => `📎 ${x}`))}
+        ${renderRegCard(cur.regulations || [])}
+        ${renderListCard('🧭 具体执行操作指引', (cur.guides || []).map((g, i) => `<b>${i + 1}.</b> ${g}`), 'guide-list')}
+        ${renderCommCard(cur.comm_coord || [])}
+        ${renderListCard('⭐ 本阶段工作重点', (cur.key_points || []).map(x => `❗ ${x}`), 'key-list')}
+    `;
+}
 
-    // Paper templates
-    loadPaperTemplates();
+function renderListCard(title, items, cls = '') {
+    if (!items.length) return '';
+    return `<div class="card">
+        <h3>${title}</h3>
+        <ul class="checklist ${cls}">${items.map(x => `<li>${x}</li>`).join('')}</ul>
+    </div>`;
+}
 
-    // Score preview if available
-    if (Object.keys(p.scores).length > 0) {
-        showScorePreview(p);
-    }
+function renderRegCard(regs) {
+    if (!regs.length) return '';
+    return `<div class="card">
+        <h3>⚖️ 本阶段依据法规</h3>
+        <ul class="checklist">${regs.map(r =>
+            `<li><b>${r.name}</b>（${r.doc_no}）<br><small style="color:#666">要点: ${r.key}</small></li>`
+        ).join('')}</ul>
+    </div>`;
+}
+
+function renderCommCard(comms) {
+    if (!comms.length) return '';
+    return `<div class="card">
+        <h3>💬 沟通与协调事项</h3>
+        ${comms.map(c => `
+            <div class="comm-item" style="border-left:3px solid var(--primary,#1a56db);padding:.4rem .8rem;margin:.5rem 0;background:var(--gray-50,#f8fafc);border-radius:4px">
+                <div><b>${c.timing}</b> <span style="color:#888">↔ ${c.parties}</span> <span class="badge">${c.channel}</span></div>
+                <div style="font-size:.85rem;margin-top:.25rem">${c.points}</div>
+            </div>`).join('')}
+    </div>`;
 }
 
 async function loadPaperTemplates() {

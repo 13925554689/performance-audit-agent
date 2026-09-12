@@ -4,18 +4,25 @@
 ponytail: 状态机模式，一个dict驱动全部业务流程
 """
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 import json
 import os
+import sys
 import urllib.request
 import threading
 from collections import deque
 
 # ponytail: import once at the top
 from regulations import (
-    PERFORMANCE_INDEX_SYSTEM, WORKING_PAPER_TEMPLATES, REPORT_TEMPLATE
+    PERFORMANCE_INDEX_SYSTEM, WORKING_PAPER_TEMPLATES, REPORT_TEMPLATE,
+    CLASSIFICATIONS, WORKFLOW_REFS, get_classification, list_classifications,
+    get_classification_kit,
 )
+from engine.stages import WORKFLOWS, get_workflow
+
+# 分阶段完整流程定义（每阶段含资料/法规/前置/指引/沟通/重点/成果）
+STAGE_WORKFLOWS = WORKFLOWS
 
 # ponytail: ring buffer, 100 entries, overwrite oldest
 _trace = deque(maxlen=100)
@@ -31,134 +38,75 @@ def _log(action, pid, detail=""):
     })
 
 # ponytail: stdlib urllib → LLM, zero-dependency. Falls back if no key set.
-def _call_llm(system_prompt: str, user_prompt: str) -> str | None:
-    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
-    if not api_key:
-        return None
-    base = os.environ.get("OPENAI_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
-    model = os.environ.get("EVOLVE_MODEL", "deepseek-chat")
-    body = json.dumps({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": 0.3, "max_tokens": 2000
-    }).encode()
-    req = urllib.request.Request(
-        f"{base}/chat/completions",
-        data=body,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    )
-    try:
-        resp = json.loads(urllib.request.urlopen(req, timeout=60).read())
-        return resp["choices"][0]["message"]["content"]
-    except Exception as e:
-        print(f"[engine] _call_llm failed: {e}", file=__import__("sys").stderr)
-        return None
+# v6.0: 双模型 — deepseek(默认,推理/生成) + zhipu GLM(备选/中文法规)。可直接调用，key从Hermes配置获取。
+LLM_PROVIDERS = {
+    "deepseek": {
+        "base": os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+        "key_envs": ["DEEPSEEK_API_KEY"],
+        "models": ["deepseek-chat", "deepseek-reasoner"],
+    },
+    "zhipu": {
+        "base": os.environ.get("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"),
+        "key_envs": ["ZHIPU_API_KEY", "GLM_API_KEY", "ZAI_API_KEY"],
+        "models": ["glm-5.2", "glm-4.6"],
+    },
+}
+
+
+def _llm_key(provider: str) -> str | None:
+    for env in LLM_PROVIDERS[provider]["key_envs"]:
+        if os.environ.get(env):
+            return os.environ[env]
+    return None
+
+
+def llm_status() -> dict:
+    """返回双模型可用状态（前端AI面板用）"""
+    return {
+        pid: {
+            "available": _llm_key(pid) is not None,
+            "models": conf["models"],
+        }
+        for pid, conf in LLM_PROVIDERS.items()
+    }
+
+
+def _call_llm(system_prompt: str, user_prompt: str, provider: str = None,
+              temperature: float = 0.3, max_tokens: int = 2000) -> str | None:
+    """调用LLM。provider=None时按 deepseek→zhipu 顺序自动降级。"""
+    chain = [provider] if provider else ["deepseek", "zhipu"]
+    for pid in chain:
+        conf = LLM_PROVIDERS.get(pid)
+        if not conf:
+            continue
+        api_key = _llm_key(pid)
+        if not api_key:
+            continue
+        body = json.dumps({
+            "model": conf["models"][0],
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "temperature": temperature, "max_tokens": max_tokens
+        }).encode()
+        req = urllib.request.Request(
+            f"{conf['base'].rstrip('/')}/chat/completions",
+            data=body,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        )
+        try:
+            resp = json.loads(urllib.request.urlopen(req, timeout=90).read())
+            return resp["choices"][0]["message"]["content"]
+        except Exception as e:
+            print(f"[engine] _call_llm({pid}) failed: {e}", file=sys.stderr)
+    return None
 
 # ═══════════════════════════════════════════════════════════
-# 8阶段业务流程定义
+# 业务流程定义 — v6.0 从 engine/stages.py 加载（每阶段完整工作包）
+# 保留旧名 PROCESS_STAGES 供现有代码引用
 # ═══════════════════════════════════════════════════════════
-PROCESS_STAGES = [
-    {
-        "stage": 1, "id": "acceptance", "name": "业务承接",
-        "description": "确认业务委托、签订约定书、明确评价对象和范围",
-        "outputs": ["业务约定书", "委托方需求确认单"],
-        "checklist": [
-            "被评价单位是否认可并理解其责任",
-            "评价人员是否具备专业胜任能力",
-            "是否存在独立性威胁",
-            "是否已签订业务约定书"
-        ],
-        "estimated_time": "1-2天"
-    },
-    {
-        "stage": 2, "id": "planning", "name": "计划评价工作",
-        "description": "了解项目背景、设计评价指标体系、编制评价方案",
-        "outputs": ["绩效评价工作方案", "评价指标体系表", "时间进度安排表"],
-        "checklist": [
-            "是否已充分了解项目背景和政策依据",
-            "评价指标体系是否覆盖决策-过程-产出-效益四维度",
-            "指标权重是否合理(产出+效益≥60%)",
-            "是否确定了数据收集方法和抽样方案",
-            "评价方案是否经委托方确认"
-        ],
-        "estimated_time": "3-5天"
-    },
-    {
-        "stage": 3, "id": "indicators", "name": "指标体系设计",
-        "description": "根据项目特点细化三级/四级指标，设定评分标准和权重",
-        "outputs": ["绩效评价指标体系(细化版)", "评分标准表", "数据采集表"],
-        "checklist": [
-            "指标是否符合相关性、重要性、可比性、系统性、经济性原则",
-            "定量指标是否明确计算公式",
-            "定性指标是否有明确的评分档次",
-            "评分标准是否可操作"
-        ],
-        "estimated_time": "2-3天"
-    },
-    {
-        "stage": 4, "id": "data_collection", "name": "数据收集与证据获取",
-        "description": "通过文件检查、访谈、问卷、观察、数据分析等方式收集证据",
-        "outputs": ["文件检查记录表", "访谈纪要", "问卷分析报告", "现场观察记录", "数据分析底稿"],
-        "checklist": [
-            "是否覆盖全部6种证据收集方法(适用时)",
-            "证据是否满足可靠性、相关性、充分性",
-            "是否对关键数据进行了交叉验证",
-            "是否保留了证据来源记录"
-        ],
-        "estimated_time": "5-10天"
-    },
-    {
-        "stage": 5, "id": "analysis", "name": "分析评分",
-        "description": "对照指标体系逐项评分，汇总各维度得分，形成初步评价结论",
-        "outputs": ["评分工作底稿", "评分汇总表", "问题清单", "初步评价结论"],
-        "checklist": [
-            "每项评分是否有充分证据支持",
-            "加减分理由是否明确记录",
-            "各维度得分是否合理",
-            "是否进行了组内复核"
-        ],
-        "estimated_time": "3-5天"
-    },
-    {
-        "stage": 6, "id": "reporting", "name": "报告撰写与沟通",
-        "description": "撰写绩效评价报告，与被评价单位沟通，修改完善",
-        "outputs": ["绩效评价报告(征求意见稿)", "沟通记录", "反馈意见处理表"],
-        "checklist": [
-            "报告是否包含全部7个章节",
-            "结论是否有充分证据支持",
-            "建议是否具有可操作性",
-            "是否已与被评价单位充分沟通",
-            "反馈意见是否妥善处理"
-        ],
-        "estimated_time": "5-7天"
-    },
-    {
-        "stage": 7, "id": "quality_control", "name": "质量控制",
-        "description": "组内复核、部门复核、独立复核三级质量控制",
-        "outputs": ["复核记录表", "质量评价表"],
-        "checklist": [
-            "是否完成三级复核",
-            "复核意见是否已处理",
-            "报告是否满足完整性、准确性、客观性、说服力、逻辑清晰要求",
-            "底稿归档是否完整"
-        ],
-        "estimated_time": "2-3天"
-    },
-    {
-        "stage": 8, "id": "archiving", "name": "归档与后续",
-        "description": "整理底稿、归档电子/纸质档案、跟踪整改建议落实情况",
-        "outputs": ["归档清单", "底稿索引表", "后续跟踪计划"],
-        "checklist": [
-            "底稿是否按索引编号归档",
-            "电子档案是否备份",
-            "是否制定了后续跟踪计划"
-        ],
-        "estimated_time": "1-2天"
-    }
-]
+PROCESS_STAGES = get_workflow("standard_8")
 
 
 @dataclass
@@ -313,7 +261,7 @@ class ProcessEngine:
             "current_stage": project.current_stage,
             "stage_name": next_stage["name"],
             "stage_id": next_stage["id"],
-            "checklist": next_stage["checklist"],
+            "checklist": next_stage.get("checklist") or next_stage.get("key_points", []),
             "outputs": next_stage["outputs"],
             "estimated_time": next_stage["estimated_time"],
             "stage_num": project.current_stage,
@@ -347,13 +295,13 @@ class ProcessEngine:
             "current_stage": stage,
             "stage_name": current["name"],
             "stage_id": current["id"],
-            "checklist": current["checklist"],
+            "checklist": current.get("checklist") or current.get("key_points", []),
             "outputs": current["outputs"],
             "estimated_time": current["estimated_time"]
         }
 
     def get_stage_detail(self, pid: str) -> dict:
-        """获取当前阶段详情"""
+        """获取当前阶段详情 — v6.0 含资料/法规/前置/指引/沟通/重点完整工作包"""
         project = self._projects.get(pid)
         if not project:
             return {"error": "项目不存在"}
@@ -373,6 +321,9 @@ class ProcessEngine:
             for s in PROCESS_STAGES
         ]
 
+        # 兼容旧字段: key_points → checklist
+        checklist = stage.get("checklist") or stage.get("key_points", [])
+
         return {
             "project": asdict(project),
             "current": {
@@ -380,7 +331,13 @@ class ProcessEngine:
                 "total": len(PROCESS_STAGES),
                 "name": stage["name"],
                 "description": stage["description"],
-                "checklist": stage["checklist"],
+                "checklist": checklist,
+                "materials_needed": stage.get("materials_needed", []),
+                "regulations": stage.get("regulations", []),
+                "prerequisites": stage.get("prerequisites", []),
+                "guides": stage.get("guides", []),
+                "comm_coord": stage.get("comm_coord", []),
+                "key_points": stage.get("key_points", []),
                 "outputs": stage["outputs"],
                 "estimated_time": stage["estimated_time"]
             },
@@ -494,6 +451,151 @@ class ProcessEngine:
         return result
 
     # ═══════════════════════════════════════════════
+    #  阶段一产出: 全项目工作流程/方案/计划/人员调配
+    # ═══════════════════════════════════════════════
+
+    def get_full_workflow(self, pid: str) -> dict:
+        """该项目全部工作流程(每阶段完整工作包)"""
+        project = self._projects.get(pid)
+        if not project:
+            return {"error": "项目不存在"}
+        stages = [{
+            "stage": s["stage"], "name": s["name"], "description": s["description"],
+            "estimated_time": s["estimated_time"],
+            "prerequisites": s.get("prerequisites", []),
+            "materials_needed": s.get("materials_needed", []),
+            "regulations": s.get("regulations", []),
+            "guides": s.get("guides", []),
+            "comm_coord": s.get("comm_coord", []),
+            "key_points": s.get("key_points", []),
+            "outputs": s["outputs"],
+            "status": project.stage_status.get(s["id"], "pending"),
+        } for s in PROCESS_STAGES]
+        total_days = self._estimate_total_days(stages)
+        return {
+            "project": {"id": project.id, "name": project.name, "org_name": project.org_name,
+                        "project_type": project.project_type, "budget": project.budget, "year": project.year},
+            "stages": stages,
+            "total_estimated_days": total_days,
+        }
+
+    # ponytail: 简单启发式 — "x-y天"取y，锁定=基准人数
+    _WORKER_BASE = {"负责人": 1, "项目经理": 1, "成员": 2}
+
+    def _estimate_total_days(self, stages: list) -> int:
+        days = 0
+        for s in stages:
+            t = s.get("estimated_time", "")
+            if "天" in t:
+                num = "".join(ch for ch in t if ch.isdigit() or ch == "-")
+                days += int(num.split("-")[-1]) if num else 0
+        return days
+
+    def generate_work_plan(self, pid: str, start_date: str = None,
+                           team_size: int = None) -> dict:
+        """阶段一交付: 工作流程+实施方案+工作计划+人员调配 一键生成"""
+        project = self._projects.get(pid)
+        if not project:
+            return {"error": "项目不存在"}
+
+        cls = get_classification(self.classification_for(project))
+        wf = self.get_full_workflow(pid)
+        stages = wf["stages"]
+        total_days = wf["total_estimated_days"] or 30
+
+        # 人员调配 — 按预算规模分层
+        budget = project.budget or 0
+        if budget >= 5000:
+            tier = {"组长": 1, "项目经理": 1, "财务专家": 2, "行业专家": 2, "数据分析员": 2, "助理": 2}
+        elif budget >= 500:
+            tier = {"组长": 1, "项目经理": 1, "财务专家": 1, "行业专家": 1, "数据分析员": 1, "助理": 1}
+        else:
+            tier = {"组长(兼项目经理)": 1, "财务专家": 1, "助理": 1}
+        team = [{"role": r, "count": n, "duty": self._role_duty(r)} for r, n in tier.items()]
+        team_total = sum(n for _, n in tier.items())
+        if team_size and team_size != team_total:
+            team.append({"role": "机动人员", "count": max(0, team_size - team_total), "duty": "按需支援各环节"})
+
+        # 时间计划 — 从起始日按阶段顺序排期
+        try:
+            cur = datetime.strptime(start_date, "%Y-%m-%d") if start_date else datetime.now()
+        except ValueError:
+            cur = datetime.now()
+        schedule = []
+        for s in stages:
+            t = s.get("estimated_time", "")
+            nums = [int(x) for x in "".join(ch if ch.isdigit() else " " for ch in t).split()]
+            dur = (nums[-1] if nums else 1)
+            end = cur + timedelta(days=dur)
+            schedule.append({
+                "stage": s["stage"], "name": s["name"], "duration_days": dur,
+                "start": cur.strftime("%Y-%m-%d"), "end": end.strftime("%Y-%m-%d"),
+                "outputs": s["outputs"], "lead_role": self._stage_lead(s),
+            })
+            cur = end + timedelta(days=1)
+
+        return {
+            "project": {"id": project.id, "name": project.name, "org_name": project.org_name,
+                        "year": project.year, "budget": project.budget,
+                        "classification": cls["name"] if cls else project.project_type},
+            "workflow_summary": [{"stage": s["stage"], "name": s["name"], "time": s["estimated_time"],
+                                  "outputs": s["outputs"]} for s in stages],
+            "implementation_plan": {
+                "评价对象": f"{project.org_name} {project.name}",
+                "评价范围": f"{project.year}年度资金 {project.budget}万元",
+                "评价方法": ["文件检查", "访谈", "问卷调查", "现场观察", "数据分析", "文献检索"],
+                "指标框架": "决策-过程-产出-效益四维(财预〔2020〕10号)" if (cls is None or cls["id"] == "project_expenditure") else (cls["name"] + "专用指标体系"),
+                "评价依据": [r["name"] + "(" + r["doc_no"] + ")" for r in (cls["reg_basis"] if cls else [])] or ["财预〔2020〕10号", "中发〔2018〕34号"],
+                "成果形式": cls["deliverables"] if cls else ["绩效评价报告", "评分工作底稿", "归档清单"],
+            },
+            "team": team,
+            "schedule": schedule,
+            "total_days": total_days,
+            "end_date": cur.strftime("%Y-%m-%d"),
+        }
+
+    def classification_for(self, project) -> Optional[str]:
+        """项目类型 → 分类id"""
+        mapping = {
+            "项目支出": "project_expenditure", "部门整体": "department_overall",
+            "资产管理": "asset_performance", "单位自评": "self_evaluation",
+            "成本绩效": "cost_performance", "政策评价": "policy_evaluation",
+        }
+        return mapping.get(project.project_type)
+
+    def _role_duty(self, role: str) -> str:
+        duties = {
+            "组长": "总体把关，审定方案与报告，对接委托方高层",
+            "组长(兼项目经理)": "总体把关+现场组织，审定方案与报告",
+            "项目经理": "现场组织、进度控制、质量把关、对外沟通",
+            "财务专家": "资金拨付/凭证检查/预算执行分析",
+            "行业专家": "业务流程核查/产出质量鉴定/效益分析",
+            "数据分析员": "问卷统计分析/数据交叉验证/图表制作",
+            "助理": "资料收发整理/访谈记录/底稿归档",
+        }
+        return duties.get(role, "按项目组安排")
+
+    def _stage_lead(self, stage: dict) -> str:
+        lead_map = {"业务承接": "组长", "计划评价工作": "项目经理", "指标体系细化": "项目经理",
+                    "数据收集与证据获取": "项目经理", "分析评分": "财务专家", "报告撰写与沟通": "组长",
+                    "质量控制": "组长", "归档与后续": "助理"}
+        return lead_map.get(stage["name"], "项目经理")
+
+    def generate_stage1_docs(self, pid: str, start_date: str = None) -> dict:
+        """阶段一一键产出: 方案+计划+人员调配(报告全文由 LLM 增强生成)"""
+        plan = self.generate_work_plan(pid, start_date)
+        if "error" in plan:
+            return plan
+        # LLM 增强: 生成方案正文要点（失败静默降级为结构化数据）
+        system = "你是资深财政绩效评价专家。根据给定的项目信息和阶段安排，输出一份精炼的绩效评价实施方案要点(500字内)，包含: 评价思路、重点难点、创新点。直接输出文字。"
+        user = json.dumps(plan["implementation_plan"], ensure_ascii=False) + "\n阶段安排:" + json.dumps(
+            plan["workflow_summary"], ensure_ascii=False)
+        insight = _call_llm(system, user[:6000], max_tokens=1200)
+        plan["ai_brief"] = insight or "（LLM未配置，展示结构化要点）"
+        _log("stage1_docs", pid, f"work plan generated, {plan['total_days']}days, team={sum(t['count'] for t in plan['team'])}")
+        return plan
+
+    # ═══════════════════════════════════════════════
     #  AI 自动进化引擎
     # ═══════════════════════════════════════════════
 
@@ -565,6 +667,52 @@ class ProcessEngine:
         completed = sum(1 for p in self._projects.values() if p.total_score > 0)
         if completed >= 3 and completed % 3 == 0:
             threading.Thread(target=self.evolve, daemon=True).start()
+
+    def ai_consult(self, question: str, context: str = "", provider: str = None) -> dict:
+        """AI咨询: 直接调用 deepseek/zhipu 大模型回答绩效评价业务问题"""
+        if not question or not question.strip():
+            return {"error": "问题不能为空"}
+        system = """你是资深财政绩效评价专家，精通财预〔2020〕10号、中发〔2018〕34号、成本预算绩效管理等。
+回答要专业、具体、可操作，引用法规文号，按条目组织。"""
+        user = (f"背景: {context}\n" if context else "") + f"问题: {question}"
+        answer = _call_llm(system, user[:8000], provider=provider, max_tokens=2500)
+        if not answer:
+            return {"error": "LLM调用失败(deepseek/zhipu均不可用)"}
+        used = provider or "deepseek(失败自动切换)"
+        _log("ai_consult", "system", f"provider={used} q={question[:40]}")
+        return {"success": True, "provider": used, "question": question, "answer": answer}
+
+    def ai_score_suggest(self, pid: str) -> dict:
+        """AI辅助评分建议: 基于项目信息和已有问题清单，给出各维度评分建议和理由"""
+        project = self._projects.get(pid)
+        if not project:
+            return {"error": "项目不存在"}
+        system = """你是财政绩效评价专家。根据项目信息和建议问题清单，输出JSON(只输出JSON):
+{"suggestions": [{"dimension": "决策/过程/产出/效益", "suggested_score": N, "max_score": N, "reason": "..."}],
+ "risk_flags": ["需要现场重点核实的事项"]}
+dimension必须恰好是这四个。"""
+        user = json.dumps({
+            "项目": project.name, "单位": project.org_name, "类型": project.org_type,
+            "预算": project.budget, "年度": project.year,
+            "已录入问题": [i["issue"] for i in project.issues],
+            "历史同类项目常见问题": self.get_learned_patterns().get("common_issues", [])[:5],
+        }, ensure_ascii=False)
+        raw = _call_llm(system, user, max_tokens=1500)
+        if not raw:
+            return {"error": "LLM调用失败"}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            # 宽松提取JSON块
+            import re
+            m = re.search(r"\{.*\}", raw, re.S)
+            try:
+                parsed = json.loads(m.group()) if m else {"raw": raw}
+            except json.JSONDecodeError:
+                parsed = {"raw": raw}
+        _log("ai_score_suggest", pid, "score suggestions generated")
+        return {"success": True, "suggestions": parsed.get("suggestions", parsed.get("raw", [])),
+                "risk_flags": parsed.get("risk_flags", [])}
 
     def generate_working_paper(self, pid: str, paper_type: str) -> dict:
         """生成工作底稿"""

@@ -12,7 +12,9 @@
     <div class="nav-links">
         <a href="/" class="active">首页</a>
         <a href="/projects">项目管理</a>
+        <a href="/classifications">分类体系</a>
         <a href="/regulations">法规库</a>
+        <a href="/ai">AI助手</a>
     </div>
 </nav>
 
@@ -20,10 +22,12 @@
     <!-- Hero -->
     <section class="hero">
         <h1>业务流程驱动的绩效评价审计智能体</h1>
-        <p>内置法规库 · 8阶段业务流程 · 自动生成底稿和报告</p>
+        <p>内置法规库 · 6大业务分类 · 8阶段完整工作包 · AI双模型(DeepSeek+智谱GLM)</p>
         <div class="hero-actions">
             <button class="btn btn-primary" onclick="showCreateModal()">➕ 新建审计项目</button>
             <a href="/projects" class="btn btn-secondary">📋 查看项目列表</a>
+            <a href="/classifications" class="btn btn-secondary">🗂️ 业务分类体系</a>
+            <a href="/ai" class="btn btn-secondary">🤖 AI助手</a>
         </div>
     </section>
 
@@ -60,9 +64,21 @@
             <span class="card-hint">产出+效益≥60%权重</span>
         </div>
         <div class="feature-card">
+            <div class="feature-icon">🗂️</div>
+            <h3>6大业务分类</h3>
+            <p>项目支出/部门整体/单位自评/成本绩效/政策评价/资产管理，每类专属法规库+流程+沟通模板+成果清单</p>
+            <a href="/classifications" class="card-link">查看分类 →</a>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🤖</div>
+            <h3>AI 双模型助手</h3>
+            <p>DeepSeek + 智谱GLM 直接调用: 业务咨询、AI评分建议、方案要点生成、历史项目进化分析</p>
+            <a href="/ai" class="card-link">进入AI助手 →</a>
+        </div>
+        <div class="feature-card">
             <div class="feature-icon">🔍</div>
             <h3>案例参考</h3>
-            <p>国资委、上海大数据中心等真实绩效评价案例，支持对标分析</p>
+            <p>国资委、上海大数据中心、惠商保、冷链物流园、上海成本绩效等8个真实案例，支持对标分析</p>
             <a href="#" onclick="loadCases()" class="card-link">查看案例 →</a>
         </div>
     </section>
@@ -106,6 +122,9 @@
                         <option value="项目支出">项目支出绩效评价</option>
                         <option value="部门整体">部门整体支出绩效评价</option>
                         <option value="资产管理">国有资产管理绩效评价</option>
+                        <option value="单位自评">单位自评（绩效自评）</option>
+                        <option value="成本绩效">成本预算绩效分析</option>
+                        <option value="政策评价">政策绩效评价</option>
                     </select>
                 </div>
                 <div class="form-group">

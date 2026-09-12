@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI助手 — 绩效评价审计智能体</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+.chat-box{background:#fff;border:1px solid var(--gray-200,#e5e7eb);border-radius:8px;padding:1rem;min-height:300px;max-height:520px;overflow-y:auto;margin-bottom:.75rem}
+.msg{margin:.6rem 0;padding:.6rem .9rem;border-radius:8px;max-width:92%;line-height:1.55;font-size:.9rem}
+.msg.user{background:var(--primary,#1a56db);color:#fff;margin-left:auto}
+.msg.ai{background:var(--gray-100,#f3f4f6);color:#1f2937;white-space:pre-wrap}
+.msg small{display:block;margin-top:.3rem;opacity:.7}
+.ai-status{display:flex;gap:.75rem;margin-bottom:.75rem;font-size:.85rem}
+.model-chip{padding:.25rem .75rem;border-radius:14px;border:1px solid var(--gray-300,#d1d5db);background:#fff}
+.model-chip.ok{border-color:#22c55e;background:#f0fdf4;color:#166534}
+.quick-qs{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem}
+.quick-qs button{font-size:.78rem;padding:.3rem .7rem;border:1px solid var(--gray-300,#d1d5db);background:#fff;border-radius:14px;cursor:pointer}
+.quick-qs button:hover{border-color:var(--primary,#1a56db);color:var(--primary,#1a56db)}
+</style>
+</head>
+<body>
+<nav class="navbar">
+    <div class="nav-brand">📊 绩效评价审计智能体</div>
+    <div class="nav-links">
+        <a href="/">首页</a>
+        <a href="/projects">项目管理</a>
+        <a href="/classifications">分类体系</a>
+        <a href="/regulations">法规库</a>
+        <a href="/ai" class="active">AI助手</a>
+    </div>
+</nav>
+
+<main class="container">
+    <div class="page-header">
+        <h2>🤖 AI 绩效评价助手</h2>
+        <div class="ai-status" id="aiStatus"></div>
+    </div>
+
+    <div class="quick-qs">
+        <button onclick="ask('绩效评价报告中问题描述的规范写法是什么？')">问题写法规范</button>
+        <button onclick="ask('成本预算绩效分析的六个步骤和每步要点？')">成本绩效六步法</button>
+        <button onclick="ask('产出+效益权重低于60%违反哪条规定？如何补救？')">权重合规</button>
+        <button onclick="ask('三级质量控制复核各自的重点是什么？')">三级复核要点</button>
+        <button onclick="ask('部门整体绩效评价与项目支出评价的核心区别？')">部门整体vs项目</button>
+    </div>
+
+    <div class="chat-box" id="chatBox">
+        <div class="msg ai">你好！我是绩效评价AI助手（DeepSeek + 智谱GLM双模型）。
+可咨询: 法规依据、指标设计、评分标准、沟通话术、报告写法、成本绩效分析等。
+在项目评分页还可以获得AI评分建议。</div>
+    </div>
+
+    <div style="display:flex;gap:.5rem">
+        <input type="text" id="qInput" style="flex:1;padding:.6rem .9rem;border:1px solid var(--gray-300,#d1d5db);border-radius:6px"
+               placeholder="输入绩效评价问题..." onkeydown="if(event.key==='Enter')submitQ()">
+        <select id="provider" style="padding:.6rem;border:1px solid var(--gray-300,#d1d5db);border-radius:6px">
+            <option value="">自动(优先DeepSeek)</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="zhipu">智谱GLM</option>
+        </select>
+        <button class="btn btn-primary" onclick="submitQ()">发送</button>
+    </div>
+</main>
+
+<script src="/static/js/app.js"></script>
+<script>
+async function init() {
+    const st = await API('/api/ai/status');
+    document.getElementById('aiStatus').innerHTML = Object.entries(st).map(([k, v]) =>
+        `<span class="model-chip ${v.available ? 'ok' : ''}">
+            ${k === 'deepseek' ? 'DeepSeek' : '智谱GLM'} ${v.available ? '✓ ' + v.models[0] : '✗ 未配置'}</span>`
+    ).join('');
+}
+
+async function ask(q) {
+    document.getElementById('qInput').value = q;
+    submitQ();
+}
+
+async function submitQ() {
+    const input = document.getElementById('qInput');
+    const q = input.value.trim();
+    if (!q) return;
+    const box = document.getElementById('chatBox');
+    const provider = document.getElementById('provider').value || undefined;
+    box.insertAdjacentHTML('beforeend', `<div class="msg user">${escHTML(q)}</div>`);
+    input.value = '';
+    box.insertAdjacentHTML('beforeend', '<div class="msg ai" id="thinking">思考中...</div>');
+    box.scrollTop = box.scrollHeight;
+    const res = await API('/api/ai/consult', {
+        method: 'POST',
+        body: JSON.stringify({ question: q, provider })
+    });
+    document.getElementById('thinking')?.remove();
+    if (res.error) {
+        box.insertAdjacentHTML('beforeend', `<div class="msg ai">❌ ${escHTML(res.error)}</div>`);
+    } else {
+        box.insertAdjacentHTML('beforeend',
+            `<div class="msg ai">${escHTML(res.answer)}<small>— ${escHTML(res.provider)}</small></div>`);
+    }
+    box.scrollTop = box.scrollHeight;
+}
+
+function escHTML(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+init();
+</script>
+</body>
+</html>

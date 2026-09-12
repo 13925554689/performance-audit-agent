@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>分类体系 — 绩效评价审计智能体</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+.cls-card{background:#fff;border:1px solid var(--gray-200,#e5e7eb);border-radius:8px;padding:1rem 1.25rem;margin-bottom:1rem;cursor:pointer;transition:box-shadow .15s}
+.cls-card:hover{box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.cls-card h4{margin:0 0 .35rem}
+.kit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.75rem;margin:.5rem 0}
+.kit-box{background:var(--gray-50,#f8fafc);border-radius:6px;padding:.75rem}
+.kit-box h5{margin:.1rem 0 .5rem;font-size:.9rem}
+.kit-box li{font-size:.82rem;margin:.2rem 0;color:#444}
+.badge{display:inline-block;background:var(--primary,#1a56db);color:#fff;border-radius:10px;padding:.05rem .5rem;font-size:.72rem;margin-left:.3rem}
+</style>
+</head>
+<body>
+<nav class="navbar">
+    <div class="nav-brand">📊 绩效评价审计智能体</div>
+    <div class="nav-links">
+        <a href="/">首页</a>
+        <a href="/projects">项目管理</a>
+        <a href="/classifications" class="active">分类体系</a>
+        <a href="/regulations">法规库</a>
+        <a href="/ai">AI助手</a>
+    </div>
+</nav>
+
+<main class="container">
+    <div class="page-header">
+        <h2>🗂️ 绩效评价业务分类体系</h2>
+        <p style="color:#666;font-size:.9rem">按财预〔2020〕10号评价方式 + 部门整体/成本绩效/政策评估实务扩展。每类含专属法规库、标准工作流程、标准沟通模板、标准成果清单。点击卡片展开工作包。</p>
+    </div>
+
+    <div id="clsList"><div class="spinner"></div> 加载中...</div>
+</main>
+
+<script src="/static/js/app.js"></script>
+<script>
+let openId = null;
+
+async function init() {
+    const list = await API('/api/classifications');
+    document.getElementById('clsList').innerHTML = list.map(c => `
+        <div class="cls-card" id="cls_${c.id}" onclick="toggleKit('${c.id}')">
+            <h4>${c.icon} ${c.name}
+                <span class="badge">${c.reg_count}部法规</span>
+                <span class="badge">${c.deliverable_count}项成果</span>
+            </h4>
+            <div style="font-size:.85rem;color:#555">${c.scope}</div>
+            <div style="font-size:.8rem;color:#888;margin-top:.3rem">
+                <b>适用:</b> ${c.applicable}<br>
+                <b>标准流程:</b> ${c.workflow}
+            </div>
+            <div class="kit-detail" id="kit_${c.id}" style="display:none"></div>
+        </div>
+    `).join('');
+}
+
+async function toggleKit(cid) {
+    const box = document.getElementById('kit_' + cid);
+    if (openId && openId !== cid) {
+        document.getElementById('kit_' + openId).style.display = 'none';
+    }
+    if (box.style.display === 'none') {
+        if (!box.dataset.loaded) {
+            box.innerHTML = '<div class="spinner"></div> 加载工作包...';
+            const kit = await API('/api/classifications/' + cid);
+            const c = kit.classification;
+            box.innerHTML = `
+                <div class="kit-grid">
+                    <div class="kit-box"><h5>⚖️ 专属法规库</h5><ul>
+                        ${c.reg_basis.map(r => `<li>${r.name}（${r.doc_no}）</li>`).join('')}</ul></div>
+                    <div class="kit-box"><h5>💬 标准沟通模板（${c.comm_templates.length}个节点）</h5><ul>
+                        ${c.comm_templates.map(t => `<li><b>${t.timing}</b> ↔ ${t.parties}<br><small>${t.points}</small></li>`).join('')}</ul></div>
+                    <div class="kit-box"><h5>📦 标准成果和报告（${c.deliverables.length}项）</h5><ul>
+                        ${c.deliverables.map(d => `<li>📄 ${d}</li>`).join('')}
+                        <li style="margin-top:.4rem"><b>报告章节:</b> ${c.report_sections.join(' / ')}</li></ul></div>
+                    <div class="kit-box"><h5>📐 指标体系</h5>
+                        <p style="font-size:.82rem">${kit.index_system.name}<br>
+                        <small>依据: ${kit.index_system.based_on || '财预〔2020〕10号'}</small></p>
+                        <ul>${kit.index_system.dimensions.map(d =>
+                            `<li><b>${d.name}</b> (${d.weight}分)</li>`).join('')}</ul></div>
+                </div>`;
+            box.dataset.loaded = '1';
+        }
+        box.style.display = 'block';
+        openId = cid;
+    } else {
+        box.style.display = 'none';
+        openId = null;
+    }
+}
+
+init();
+</script>
+</body>
+</html>

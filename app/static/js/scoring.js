@@ -113,7 +113,25 @@ async function showResult(result) {
             ).join('')}
         </div>
         <button class="btn btn-primary" style="margin-top:1rem" onclick="submitAllScores()">🔄 重新计算</button>
+        <button class="btn btn-secondary" style="margin-top:1rem" onclick="aiSuggest()">🤖 AI评分建议</button>
+        <div id="aiSuggestBox" style="margin-top:.75rem;text-align:left"></div>
     `;
+}
+
+async function aiSuggest() {
+    const box = document.getElementById('aiSuggestBox');
+    box.innerHTML = '<div class="spinner"></div> AI分析中(DeepSeek)...';
+    const res = await API(`/api/projects/${PID}/ai-score-suggest`, { method: 'POST' });
+    if (res.error) { box.innerHTML = `<p style="color:#ef4444">❌ ${res.error}</p>`; return; }
+    const list = Array.isArray(res.suggestions) ? res.suggestions : [];
+    box.innerHTML = `
+        <div style="background:#f0f9ff;border-left:3px solid #1a56db;padding:.6rem .9rem;border-radius:6px">
+            <b>🤖 AI评分建议</b>
+            ${list.map(s => `<div style="margin:.4rem 0">
+                <b>${s.dimension}</b>: 建议 ${s.suggested_score}/${s.max_score} 分 — ${s.reason || ''}</div>`).join('') || '<p>' + JSON.stringify(res.suggestions).slice(0, 400) + '</p>'}
+            ${(res.risk_flags || []).length ? '<b>⚠️ 风险提示:</b><ul style="margin:.3rem 0 0 1.2rem">' +
+                res.risk_flags.map(r => `<li>${r}</li>`).join('') + '</ul>' : ''}
+        </div>`;
 }
 
 function updateInputs() {

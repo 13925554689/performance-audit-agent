@@ -12,3 +12,4 @@ data/*.json.bak
 .idea/
 *.log
 data/
+docs/markdown/zip_extracted/

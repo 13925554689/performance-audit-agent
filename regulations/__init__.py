@@ -7,6 +7,15 @@ from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime
 
+# 学习成果合并: 分类体系 + 2024/2025最新法规案例
+from regulations.classification import (
+    CLASSIFICATIONS, WORKFLOW_REFS, get_classification,
+    list_classifications, search_classifications,
+)
+from regulations.knowledge_update import (
+    EXTRA_REGULATIONS, EXTRA_CASES, COST_PERFORMANCE_KB, PLAN_REVIEW_CHECKLIST,
+)
+
 # ═══════════════════════════════════════════════════════════
 # 1. 法规清单
 # ═══════════════════════════════════════════════════════════
@@ -93,6 +102,10 @@ REGULATIONS = [
         "full_text_ref": "中发〔2018〕34号 全文"
     }
 ]
+
+# 合并学习成果: 2024/2025最新法规（CASE_LIBRARY 在下方第5节后合并）
+REGULATIONS = REGULATIONS + EXTRA_REGULATIONS
+
 
 # ═══════════════════════════════════════════════════════════
 # 2. 绩效评价指标体系（财预〔2020〕10号框架）
@@ -228,21 +241,139 @@ ASSET_PERFORMANCE_INDEX = {
 }
 
 # ═══════════════════════════════════════════════════════════
+# 2b. 部门整体支出绩效评价指标体系 (履职效能50+管理效率50)
+#     依据: 部门整体支出绩效评价共性指标体系框架(2024年度)
+# ═══════════════════════════════════════════════════════════
+DEPARTMENT_INDEX_SYSTEM = {
+    "name": "部门整体支出绩效评价指标体系",
+    "based_on": "部门整体支出绩效评价共性指标体系框架(2024年度)",
+    "scoring_rule": PERFORMANCE_INDEX_SYSTEM["scoring_rule"],
+    "dimensions": [
+        {
+            "name": "履职效能",
+            "weight": 50,
+            "indices": [
+                {"id": "H1", "name": "整体效能", "weight": 50, "sub_indices": [
+                    {"id": "H11", "name": "产出指标完成情况", "weight": 15, "type": "定量",
+                     "criteria": "部门整体绩效目标产出指标(数量/质量/时效)完成率"},
+                    {"id": "H12", "name": "效益指标完成情况", "weight": 15, "type": "定量",
+                     "criteria": "部门整体绩效目标效益指标(社会/生态/可持续)完成率"},
+                    {"id": "H13", "name": "专项资金绩效完成情况", "weight": 20, "type": "定量",
+                     "criteria": "主管部门管理的专项资金绩效目标实现程度"},
+                ]}
+            ]
+        },
+        {
+            "name": "管理效率",
+            "weight": 50,
+            "indices": [
+                {"id": "I1", "name": "预算编制", "weight": 3, "type": "定性",
+                 "criteria": "事前绩效评估应评尽评；绩效目标随预算同步编制"},
+                {"id": "I2", "name": "预算执行", "weight": 4, "type": "定量",
+                 "criteria": "季度执行率得分=(季度进度/序时进度)×1分×4季度+全年平均执行率×2分；结转结余率"},
+                {"id": "I3", "name": "信息公开", "weight": 4, "type": "定性",
+                 "criteria": "预决算公开合规性2分+绩效信息公开2分"},
+                {"id": "I4", "name": "绩效管理", "weight": 15, "type": "定性",
+                 "criteria": "绩效管理制度建设+事前评估+双监控+自评质量+结果应用+整改闭环"},
+                {"id": "I5", "name": "采购管理", "weight": 10, "type": "定性",
+                 "criteria": "采购计划执行率+合同签订备案及时性(2个工作日内)+中小企业采购份额"},
+                {"id": "I6", "name": "资产管理", "weight": 10, "type": "定性",
+                 "criteria": "账-卡-物相符+资产利用率+资产年报质量"},
+                {"id": "I7", "name": "运行成本", "weight": 4, "type": "定量",
+                 "criteria": "日常公用经费控制率+'三公'经费控制率，落实过紧日子要求"},
+            ]
+        }
+    ]
+}
+
+# ═══════════════════════════════════════════════════════════
+# 2c. 单位自评指标框架 (财预〔2020〕10号第十四条权重)
+# ═══════════════════════════════════════════════════════════
+SELF_EVAL_INDEX = {
+    "name": "项目支出绩效自评指标框架",
+    "based_on": "财预〔2020〕10号(单位自评权重)",
+    "scoring_rule": PERFORMANCE_INDEX_SYSTEM["scoring_rule"],
+    "dimensions": [
+        {"name": "预算执行率", "weight": 10, "indices": [
+            {"id": "J1", "name": "预算执行率", "weight": 10, "type": "定量",
+             "criteria": "实际支出/预算金额×100%；执行率<60%需专项说明"}]},
+        {"name": "产出指标", "weight": 50, "indices": [
+            {"id": "J2", "name": "产出数量完成率", "weight": 15, "type": "定量", "criteria": "实际/计划×100%"},
+            {"id": "J3", "name": "产出质量达标率", "weight": 15, "type": "定量", "criteria": "达标产出/实际产出×100%"},
+            {"id": "J4", "name": "产出时效符合率", "weight": 10, "type": "定量", "criteria": "按时完成产出/计划产出×100%"},
+            {"id": "J5", "name": "产出成本控制率", "weight": 10, "type": "定量", "criteria": "实际成本/预算成本×100%"}]},
+        {"name": "效益指标", "weight": 30, "indices": [
+            {"id": "J6", "name": "经济效益实现程度", "weight": 8, "type": "定性", "criteria": "对照绩效目标效益值"},
+            {"id": "J7", "name": "社会效益实现程度", "weight": 8, "type": "定性", "criteria": "对照绩效目标效益值"},
+            {"id": "J8", "name": "生态效益/可持续影响", "weight": 6, "type": "定性", "criteria": "对照绩效目标效益值"},
+            {"id": "J9", "name": "服务对象满意度", "weight": 8, "type": "定量", "criteria": "满意度调查≥85%满分"}]},
+    ]
+}
+
+# ═══════════════════════════════════════════════════════════
+# 2d. 成本绩效分析指标框架 (成本要素+定额对标)
+# ═══════════════════════════════════════════════════════════
+COST_EVAL_INDEX = {
+    "name": "成本绩效分析评价指标框架",
+    "based_on": "上海/北京成本预算绩效管理实践",
+    "scoring_rule": PERFORMANCE_INDEX_SYSTEM["scoring_rule"],
+    "dimensions": [
+        {"name": "成本合理性", "weight": 40, "indices": [
+            {"id": "K1", "name": "成本要素完整性", "weight": 10, "type": "定性", "criteria": "人/机/料/法/环五要素无遗漏"},
+            {"id": "K2", "name": "单位成本对标偏差", "weight": 20, "type": "定量", "criteria": "实际单位成本/行业基线×100%，≥120%需专项说明"},
+            {"id": "K3", "name": "成本数据可靠性", "weight": 10, "type": "定性", "criteria": "近3年数据+≥3家单位交叉验证"}]},
+        {"name": "作业效能", "weight": 30, "indices": [
+            {"id": "K4", "name": "作业定额符合度", "weight": 15, "type": "定量", "criteria": "实际作业量/定额作业量"},
+            {"id": "K5", "name": "人员配置效率", "weight": 15, "type": "定量", "criteria": "实际配置/标准配置(劳动定额)"}]},
+        {"name": "标准建设", "weight": 30, "indices": [
+            {"id": "K6", "name": "定额标准科学性", "weight": 15, "type": "定性", "criteria": "测算方法透明+专家论证通过"},
+            {"id": "K7", "name": "绩效基线可用性", "weight": 15, "type": "定性", "criteria": "基线可量化、可监控、可应用于预算"}]},
+    ]
+}
+
+# 分类 → 指标体系映射
+_INDEX_MAP = {
+    "project": PERFORMANCE_INDEX_SYSTEM,
+    "asset": ASSET_PERFORMANCE_INDEX,
+    "department": DEPARTMENT_INDEX_SYSTEM,
+    "selfeval": SELF_EVAL_INDEX,
+    "cost": COST_EVAL_INDEX,
+}
+
+# 分类id → 指标key
+_CLASSIFICATION_INDEX = {
+    "project_expenditure": "project",
+    "department_overall": "department",
+    "self_evaluation": "selfeval",
+    "cost_performance": "cost",
+    "policy_evaluation": "project",
+    "asset_performance": "asset",
+}
+
+# ═══════════════════════════════════════════════════════════
 # 4. 审计证据收集方法
+#    v6.0: 按业务指引原文修正为7种(文件检查/文献分析/问卷调查/访谈/研讨会/焦点小组/观察)
 # ═══════════════════════════════════════════════════════════
 EVIDENCE_METHODS = [
-    {"id": "M1", "name": "文件检查", "desc": "查阅项目立项、招投标、合同、验收等文件",
-     "tools": ["文件清单", "抽样表"], "output": "文件检查记录表"},
-    {"id": "M2", "name": "访谈", "desc": "与项目管理人员、财务人员、受益对象等进行访谈",
-     "tools": ["访谈提纲", "访谈记录模板"], "output": "访谈纪要"},
-    {"id": "M3", "name": "问卷调查", "desc": "向服务对象或利益相关方发放满意度调查",
-     "tools": ["问卷模板", "统计分析表"], "output": "问卷调查分析报告"},
-    {"id": "M4", "name": "现场观察", "desc": "实地查看项目实施现场、资产使用状况",
-     "tools": ["观察清单", "拍照记录"], "output": "现场观察记录表"},
-    {"id": "M5", "name": "数据分析", "desc": "对财务数据、业务数据进行趋势分析、对比分析",
-     "tools": ["Excel分析表", "SQL查询"], "output": "数据分析工作底稿"},
-    {"id": "M6", "name": "文献检索", "desc": "查阅法规政策、行业标准、同类项目对比资料",
-     "tools": ["法规库", "行业数据库"], "output": "文献检索记录"}
+    {"id": "M1", "name": "文件检查", "desc": "查阅项目立项、招投标、合同、验收等文件；对资金收支活动做合规性检查(独立核算/专款专用/原始凭证合规)",
+     "tools": ["文件清单", "抽样表"], "output": "文件检查记录表",
+     "pros": "反映全面历史信息、不干扰日常工作", "cons": "耗时、信息可能不完整、仅限已存在数据"},
+    {"id": "M2", "name": "文献分析", "desc": "查阅相关文献、研究历史资料，评估内容可靠性(客观性/多方位描述)",
+     "tools": ["法规库", "行业数据库"], "output": "文献检索记录"},
+    {"id": "M3", "name": "问卷调查", "desc": "从人群或组织收集详细信息；可函证/网上调查/电话核实，需抽样设计和计算机加工",
+     "tools": ["问卷模板", "统计分析表"], "output": "问卷调查分析报告",
+     "pros": "匿名、成本低、易比较、可获大量数据", "cons": "反馈可能不认真、措辞影响回应、需抽样专家"},
+    {"id": "M4", "name": "访谈", "desc": "计划及调查阶段获取文件/意见/想法，证实其他渠道数据；从非结构化到结构化；访谈前需策划，双人记录",
+     "tools": ["访谈提纲", "访谈记录模板"], "output": "访谈纪要",
+     "pros": "信息全面深入、建立关系、灵活", "cons": "耗时长、难分析比较、成本高"},
+    {"id": "M5", "name": "研讨会", "desc": "各阶段均可召开；获取专业领域了解/讨论成功经验与改进措施/通报不同观点",
+     "tools": ["会议方案", "纪要模板"], "output": "研讨会纪要"},
+    {"id": "M6", "name": "焦点小组", "desc": "选定人员集中讨论某主题，收集定性信息；从受益人/利益相关方获取执行情况与项目影响信息",
+     "tools": ["引导提纲", "记录表"], "output": "焦点小组记录",
+     "pros": "快捷可靠获取共同印象、短期获取广泛深入信息", "cons": "难分析成员反应、协调员需保密"},
+    {"id": "M7", "name": "现场观察", "desc": "深入了解操作运行方式、测试观点及信息对比；拍照编号留档",
+     "tools": ["观察清单", "拍照记录"], "output": "现场观察记录表",
+     "pros": "观察实际发生情况、灵活", "cons": "行为解释难、可能影响被观察者、成本高"},
 ]
 
 # ═══════════════════════════════════════════════════════════
@@ -299,6 +430,9 @@ CASE_LIBRARY = [
         "suggestions": ["提高预算编制的精准度"]
     }
 ]
+
+# 合并学习成果: 2024/2025最新案例
+CASE_LIBRARY = CASE_LIBRARY + EXTRA_CASES
 
 # ═══════════════════════════════════════════════════════════
 # 6. 审计工作底稿模板
@@ -373,10 +507,8 @@ def search_regulations(keyword: str) -> list:
 
 
 def get_index_system(category: str = "project") -> dict:
-    """获取指标体系"""
-    if category == "asset":
-        return ASSET_PERFORMANCE_INDEX
-    return PERFORMANCE_INDEX_SYSTEM
+    """获取指标体系 — project/asset/department/selfeval/cost 五套"""
+    return _INDEX_MAP.get(category, PERFORMANCE_INDEX_SYSTEM)
 
 
 def get_case(case_id: str = None) -> list:
@@ -386,3 +518,16 @@ def get_case(case_id: str = None) -> list:
             if c["id"] == case_id:
                 return [c]
     return CASE_LIBRARY
+
+
+def get_classification_kit(cid: str) -> dict:
+    """分类工作包: 分类信息 + 对应指标体系 + 沟通模板 + 成果清单"""
+    c = get_classification(cid)
+    if not c:
+        return {"error": f"未知分类: {cid}"}
+    idx_key = _CLASSIFICATION_INDEX.get(cid, "project")
+    return {
+        "classification": c,
+        "index_system": _INDEX_MAP[idx_key],
+        "workflow": WORKFLOW_REFS[c["workflow_ref"]],
+    }

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工作计划 — 绩效评价审计智能体</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+.wp-section{background:#fff;border:1px solid var(--gray-200,#e5e7eb);border-radius:8px;padding:1rem 1.25rem;margin-bottom:1rem}
+.wp-section h3{margin:.1rem 0 .7rem;border-bottom:2px solid var(--primary,#1a56db);padding-bottom:.35rem}
+table.wp{width:100%;border-collapse:collapse;font-size:.85rem}
+table.wp th{background:var(--gray-100,#f3f4f6);padding:.45rem .6rem;text-align:left;border:1px solid var(--gray-200,#e5e7eb)}
+table.wp td{padding:.45rem .6rem;border:1px solid var(--gray-200,#e5e7eb);vertical-align:top}
+.ai-brief{background:linear-gradient(135deg,#eff6ff,#f0fdf4);border-left:4px solid var(--primary,#1a56db);padding:.8rem 1rem;border-radius:6px;line-height:1.7;white-space:pre-wrap;font-size:.9rem}
+</style>
+</head>
+<body>
+<nav class="navbar">
+    <div class="nav-brand">📊 绩效评价审计智能体</div>
+    <div class="nav-links">
+        <a href="/">首页</a>
+        <a href="/projects">项目管理</a>
+        <a href="/workflow/{{pid}}">业务流程</a>
+        <a href="/scoring/{{pid}}">评分</a>
+        <a href="/ai">AI助手</a>
+    </div>
+</nav>
+
+<main class="container">
+    <div class="page-header">
+        <h2>📅 项目工作计划与人员调配</h2>
+        <div style="display:flex;gap:.5rem;align-items:center">
+            <label style="font-size:.85rem">开始日期</label>
+            <input type="date" id="startDate">
+            <button class="btn btn-primary" onclick="generate(true)">🤖 一键生成(含AI方案要点)</button>
+            <button class="btn btn-secondary" onclick="generate(false)">仅结构化生成</button>
+        </div>
+    </div>
+
+    <div id="planArea"><div class="empty-state">选择开始日期后点击生成</div></div>
+</main>
+
+<script>
+const PID = "{{pid}}";
+</script>
+<script src="/static/js/app.js"></script>
+<script>
+const APIQ = (path, opts = {}) => fetch(path, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers }, ...opts
+}).then(r => r.json());
+
+async function generate(withAI) {
+    const start = document.getElementById('startDate').value;
+    const area = document.getElementById('planArea');
+    area.innerHTML = '<div class="spinner"></div> 生成中...';
+    const url = withAI ? `/api/projects/${PID}/stage1-docs` : `/api/projects/${PID}/work-plan`;
+    const p = await APIQ(url, {
+        method: withAI ? 'POST' : 'GET',
+        body: withAI ? JSON.stringify({ start_date: start }) : undefined
+    });
+    if (p.error) { area.innerHTML = `<div class="empty-state">❌ ${p.error}</div>`; return; }
+    render(p);
+}
+
+function render(p) {
+    const imp = Object.entries(p.implementation_plan).map(([k, v]) =>
+        `<tr><th style="width:110px">${k}</th><td>${Array.isArray(v) ? v.join('；') : v}</td></tr>`).join('');
+    const teamRows = p.team.map(t =>
+        `<tr><td><b>${t.role}</b></td><td>${t.count}人</td><td>${t.duty}</td></tr>`).join('');
+    const schedRows = p.schedule.map(s =>
+        `<tr><td>第${s.stage}阶段 ${s.name}</td><td>${s.start} ~ ${s.end}<br><small>(${s.duration_days}天)</small></td><td>${s.lead_role}</td><td>${s.outputs.join('；')}</td></tr>`).join('');
+    const wfRows = p.workflow_summary.map(s =>
+        `<tr><td>${s.stage}. ${s.name}</td><td>${s.time}</td><td>${s.outputs.join('；')}</td></tr>`).join('');
+
+    document.getElementById('planArea').innerHTML = `
+        <div class="wp-section">
+            <h3>📋 项目概要</h3>
+            <p><b>${p.project.name}</b> | ${p.project.org_name} | ${p.project.year}年度 | 预算${p.project.budget}万元
+             | 分类: ${p.project.classification} | 预计总工期: <b>${p.total_days}天</b> (${p.schedule[0].start} ~ ${p.end_date})</p>
+            ${p.ai_brief ? `<div class="ai-brief"><b>🤖 AI 方案要点:</b><br>${p.ai_brief}</div>` : ''}
+        </div>
+        <div class="wp-section">
+            <h3>🧭 全部工作流程（${p.workflow_summary.length}阶段）</h3>
+            <table class="wp"><tr><th>阶段</th><th>预计时间</th><th>阶段成果</th></tr>${wfRows}</table>
+        </div>
+        <div class="wp-section">
+            <h3>📌 实施方案要素</h3>
+            <table class="wp">${imp}</table>
+        </div>
+        <div class="wp-section">
+            <h3>👥 人员调配（${p.team.reduce((a, t) => a + t.count, 0)}人）</h3>
+            <table class="wp"><tr><th>角色</th><th>人数</th><th>职责</th></tr>${teamRows}</table>
+        </div>
+        <div class="wp-section">
+            <h3>📆 时间进度计划</h3>
+            <table class="wp"><tr><th>阶段</th><th>起止日期</th><th>牵头角色</th><th>阶段成果</th></tr>${schedRows}</table>
+        </div>`;
+}
+</script>
+</body>
+</html>
