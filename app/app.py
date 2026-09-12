@@ -326,6 +326,7 @@ def api_ai_consult():
         data.get("question", ""),
         context=data.get("context", ""),
         provider=data.get("provider"),
+        deep=bool(data.get("deep")),
     ))
 
 

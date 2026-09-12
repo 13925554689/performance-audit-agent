@@ -59,6 +59,9 @@
             <option value="deepseek">DeepSeek</option>
             <option value="zhipu">智谱GLM</option>
         </select>
+        <label style="margin-left:.75rem;font-size:.85rem;cursor:pointer">
+            <input type="checkbox" id="deepMode" style="vertical-align:-2px"> 🧠 深度推理
+        </label>
         <button class="btn btn-primary" onclick="submitQ()">发送</button>
     </div>
 </main>
@@ -90,7 +93,7 @@ async function submitQ() {
     box.scrollTop = box.scrollHeight;
     const res = await API('/api/ai/consult', {
         method: 'POST',
-        body: JSON.stringify({ question: q, provider })
+        body: JSON.stringify({ question: q, provider, deep: document.getElementById('deepMode').checked })
     });
     document.getElementById('thinking')?.remove();
     if (res.error) {

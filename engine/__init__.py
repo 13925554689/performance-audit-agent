@@ -44,6 +44,7 @@ LLM_PROVIDERS = {
         "base": os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
         "key_envs": ["DEEPSEEK_API_KEY"],
         "models": ["deepseek-chat", "deepseek-reasoner"],
+        "deep_model": "deepseek-reasoner",  # 深度推理: 法规推理/勾稽验证/进化分析用
     },
     "zhipu": {
         "base": os.environ.get("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"),
@@ -72,8 +73,10 @@ def llm_status() -> dict:
 
 
 def _call_llm(system_prompt: str, user_prompt: str, provider: str = None,
-              temperature: float = 0.3, max_tokens: int = 2000) -> str | None:
-    """调用LLM。provider=None时按 deepseek→zhipu 顺序自动降级。"""
+              temperature: float = 0.3, max_tokens: int = 2000,
+              deep: bool = False) -> str | None:
+    """调用LLM。provider=None时按 deepseek→zhipu 顺序自动降级。
+    deep=True 时用深度推理模型(deepseek-reasoner)，用于法规推理/勾稽验证等复杂逻辑。"""
     chain = [provider] if provider else ["deepseek", "zhipu"]
     for pid in chain:
         conf = LLM_PROVIDERS.get(pid)
@@ -82,8 +85,10 @@ def _call_llm(system_prompt: str, user_prompt: str, provider: str = None,
         api_key = _llm_key(pid)
         if not api_key:
             continue
+        # ponytail: deep模型仅在配置了deep_model的provider上生效，降级时用普通模型
+        model = conf.get("deep_model") if (deep and conf.get("deep_model")) else conf["models"][0]
         body = json.dumps({
-            "model": conf["models"][0],
+            "model": model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -97,7 +102,10 @@ def _call_llm(system_prompt: str, user_prompt: str, provider: str = None,
         )
         try:
             resp = json.loads(urllib.request.urlopen(req, timeout=90).read())
-            return resp["choices"][0]["message"]["content"]
+            content = resp["choices"][0]["message"]["content"]
+            # ponytail: reasoner可能把token全部耗在思维链→content为空串→降级下一家
+            if content and content.strip():
+                return content
         except Exception as e:
             print(f"[engine] _call_llm({pid}) failed: {e}", file=sys.stderr)
     return None
@@ -635,9 +643,9 @@ class ProcessEngine:
 只输出JSON。"""
 
         user = json.dumps(summary, ensure_ascii=False, indent=2)
-        insight = _call_llm(system, user[:12000])
+        insight = _call_llm(system, user[:12000], deep=True)
         if not insight:
-            return {"error": "未配置OPENAI_API_KEY/DEEPSEEK_API_KEY环境变量。设置后重试。"}
+            return {"error": "LLM调用失败(deepseek/zhipu均不可用)。检查DEEPSEEK_API_KEY/ZHIPU_API_KEY。"}
 
         try:
             parsed = json.loads(insight)
@@ -668,19 +676,23 @@ class ProcessEngine:
         if completed >= 3 and completed % 3 == 0:
             threading.Thread(target=self.evolve, daemon=True).start()
 
-    def ai_consult(self, question: str, context: str = "", provider: str = None) -> dict:
-        """AI咨询: 直接调用 deepseek/zhipu 大模型回答绩效评价业务问题"""
+    def ai_consult(self, question: str, context: str = "", provider: str = None,
+                   deep: bool = False) -> dict:
+        """AI咨询: 直接调用 deepseek/zhipu 大模型回答绩效评价业务问题。
+        deep=True 走 deepseek-reasoner 深度推理（法规适用/数据勾稽等复杂问题）。"""
         if not question or not question.strip():
             return {"error": "问题不能为空"}
         system = """你是资深财政绩效评价专家，精通财预〔2020〕10号、中发〔2018〕34号、成本预算绩效管理等。
 回答要专业、具体、可操作，引用法规文号，按条目组织。"""
         user = (f"背景: {context}\n" if context else "") + f"问题: {question}"
-        answer = _call_llm(system, user[:8000], provider=provider, max_tokens=2500)
+        answer = _call_llm(system, user[:8000], provider=provider,
+                           max_tokens=2500 if not deep else 4000, deep=deep)
         if not answer:
             return {"error": "LLM调用失败(deepseek/zhipu均不可用)"}
-        used = provider or "deepseek(失败自动切换)"
-        _log("ai_consult", "system", f"provider={used} q={question[:40]}")
-        return {"success": True, "provider": used, "question": question, "answer": answer}
+        used = provider or "deepseek"
+        _log("ai_consult", "system", f"provider={used} deep={deep} q={question[:40]}")
+        return {"success": True, "provider": used, "deep": deep,
+                "question": question, "answer": answer}
 
     def ai_score_suggest(self, pid: str) -> dict:
         """AI辅助评分建议: 基于项目信息和已有问题清单，给出各维度评分建议和理由"""
