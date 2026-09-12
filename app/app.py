@@ -65,6 +65,12 @@ def workplan_page(pid):
     return render_template("workplan.html", pid=pid)
 
 
+@app.route("/pack")
+def pack_page():
+    """项目包页 — ?pid= 查看指定项目包; 无参数时仅显示导入区"""
+    return render_template("pack.html", pid=request.args.get("pid", ""))
+
+
 @app.route("/regulations")
 def regulations_page():
     return render_template("regulations.html")
@@ -292,6 +298,86 @@ def api_plan_review():
 def api_full_workflow(pid):
     """该项目全部工作流程 — 每阶段: 资料/法规/前置/操作/沟通/重点/成果"""
     return jsonify(engine.get_full_workflow(pid))
+
+
+# ═══════════════════════════════════════════════
+# API — 项目包 / 导入立项 / 结项归档 (v7.0)
+# ═══════════════════════════════════════════════
+
+from engine.project_pack import (
+    extract_project_fields, save_source_file, attach_source,
+    build_pack, archive_project, load_knowledge_base,
+)
+
+
+@app.route("/api/import/extract", methods=["POST"])
+def api_import_extract():
+    """上传合同/业务约定书 → LLM抽取项目要素(不建项目, 用户确认后调/api/projects)"""
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "缺少 file 字段(multipart/form-data)"}), 400
+    # ponytail: 临时文件即用即删, 原件在确认建项目后经 /api/projects/<pid>/import-source 正式入库
+    import tempfile
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in (".pdf", ".docx", ".doc", ".txt", ".md"):
+        return jsonify({"error": f"不支持的格式: {ext}"}), 400
+    fd, tmp = tempfile.mkstemp(suffix=ext)
+    os.close(fd)  # ponytail: Windows下mkstemp句柄不关, fitz/docx打开时会锁住导致unlink失败
+    try:
+        f.save(tmp)
+        from engine.project_pack import _doc_to_text
+        text = _doc_to_text(tmp)
+    finally:
+        try:
+            os.unlink(tmp)
+        except PermissionError:
+            pass  # ponytail: 杀毒/索引器短暂占用, 临时目录系统自清
+    if len(text.strip()) < 50:
+        return jsonify({"error": "文档文本过少(可能为扫描件), 请输入文字版或手动填写"}), 400
+    result = extract_project_fields(text)
+    result["_filename"] = f.filename
+    result["_text_length"] = len(text)
+    return jsonify(result)
+
+
+@app.route("/api/projects/<pid>/import-source", methods=["POST"])
+def api_import_source(pid):
+    """确认后的合同原件正式入库到项目包 + 记录抽取结果"""
+    f = request.files.get("file")
+    extracted = request.form.get("extracted")
+    if not f or not f.filename:
+        return jsonify({"error": "缺少 file 字段"}), 400
+    try:
+        path = save_source_file(pid, f.filename, f.read())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        extracted = json.loads(extracted) if extracted else {}
+    except json.JSONDecodeError:
+        extracted = {}
+    result = attach_source(pid, path, extracted)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@app.route("/api/projects/<pid>/pack", methods=["GET"])
+def api_project_pack(pid):
+    """项目包: 基本信息+适用法规+全过程执行+成果+资料 全聚合"""
+    return jsonify(build_pack(pid))
+
+
+@app.route("/api/projects/<pid>/archive", methods=["POST"])
+def api_archive_project(pid):
+    """结项归档: LLM提炼经验 → data/knowledge_base.json (AI学习闭环)"""
+    return jsonify(archive_project(pid))
+
+
+@app.route("/api/knowledge-base", methods=["GET"])
+def api_knowledge_base():
+    """归档知识库列表(摘要视图)"""
+    kb = load_knowledge_base()
+    return jsonify([{k: e.get(k) for k in ("pid", "name", "project_type", "year",
+                                           "total_score", "grade", "archived_at")}
+                    for e in kb])
 
 
 @app.route("/api/projects/<pid>/reconciliation", methods=["GET"])

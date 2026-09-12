@@ -135,6 +135,9 @@ class AuditProject:
     issues: list = field(default_factory=list)
     suggestions: list = field(default_factory=list)
     evidence_files: list = field(default_factory=list)
+    source_doc: dict = field(default_factory=dict)   # v7: 导入的合同/约定书 原件+抽取结果
+    summary: str = ""                                # v7: 结项一句话教训
+    archived_at: str = ""                            # v7: 归档时间(空=未归档)
     created_at: str = ""
     updated_at: str = ""
 
@@ -446,9 +449,15 @@ class ProcessEngine:
         return {"success": True, "suggestion_count": len(project.suggestions)}
 
     def get_learned_patterns(self, project_type: str = None) -> dict:
-        """ponytail: 聚合历史项目 + 加载AI进化洞察"""
+        """ponytail: 聚合历史项目 + AI进化洞察 + v7归档知识包经验"""
         from collections import Counter
         issues, suggestions = [], []
+        # v7: 结项归档的经验教训直接进池
+        try:
+            from engine.project_pack import learned_from_archive
+            archived = learned_from_archive(project_type)
+        except Exception:
+            archived = []
         for p in self._projects.values():
             if project_type and p.project_type != project_type:
                 continue
@@ -462,6 +471,8 @@ class ProcessEngine:
             "common_suggestions": [{"text": k, "count": v} for k, v in Counter(suggestions).most_common(10)],
             "total_projects_analyzed": sum(1 for p in self._projects.values() if p.total_score > 0)
         }
+        if archived:
+            result["archived_lessons"] = archived   # v7: 结项知识包提炼的经验
         evo = self._load_evolution()
         if evo:
             result["evolution"] = evo
@@ -717,6 +728,7 @@ dimension必须恰好是这四个。"""
             "预算": project.budget, "年度": project.year,
             "已录入问题": [i["issue"] for i in project.issues],
             "历史同类项目常见问题": self.get_learned_patterns().get("common_issues", [])[:5],
+            "归档项目经验教训": self.get_learned_patterns(project.project_type).get("archived_lessons", [])[:3],
         }, ensure_ascii=False)
         raw = _call_llm(system, user, max_tokens=1500)
         if not raw:

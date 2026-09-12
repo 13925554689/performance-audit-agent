@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目包 — 绩效评价审计智能体</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+.pack-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1rem 0}
+.pack-box{background:#fff;border:1px solid var(--gray-200,#e5e7eb);border-radius:10px;padding:1rem}
+.pack-box h4{margin:.2rem 0 .6rem;font-size:1rem;color:#1a56db;border-bottom:2px solid #e5e7eb;padding-bottom:.4rem}
+.kv{display:flex;justify-content:space-between;padding:.25rem 0;border-bottom:1px dashed #f0f0f0;font-size:.92rem}
+.kv b{color:var(--gray-600,#4b5563);font-weight:500}
+.tag{display:inline-block;background:#eef2ff;color:#1a56db;border-radius:6px;padding:.15rem .5rem;font-size:.8rem;margin:.15rem}
+.stage-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:.4rem}
+.drop{border:2px dashed #94a3b8;border-radius:10px;padding:1.5rem;text-align:center;color:#64748b;cursor:pointer;transition:.2s}
+.drop.drag{border-color:#1a56db;background:#eff6ff}
+.lesson{background:#f0f9ff;border-left:3px solid #0ea5e9;padding:.5rem .8rem;border-radius:6px;margin:.3rem 0;font-size:.92rem}
+</style>
+</head>
+<body>
+<nav class="nav">
+    <a href="/" class="nav-brand">📊 绩效评价审计智能体</a>
+    <div class="nav-links">
+        <a href="/projects">项目列表</a><a href="/regulations">法规库</a><a href="/classifications">分类体系</a><a href="/ai">AI助手</a>
+    </div>
+</nav>
+<main class="container">
+    <div class="card">
+        <h3>📥 导入合同 / 业务约定书 / 实施方案 立项</h3>
+        <div class="drop" id="drop" onclick="document.getElementById('fileInput').click()">
+            点击选择或拖入 <b>PDF / Word / TXT</b> 合同文件 → AI 自动抽取项目要素
+            <input type="file" id="fileInput" accept=".pdf,.docx,.doc,.txt,.md" hidden>
+        </div>
+        <div id="extractResult" style="margin-top:1rem"></div>
+    </div>
+
+    <div class="card" id="packCard" style="display:none">
+        <h3>📦 项目包 <span id="packTitle"></span></h3>
+        <div class="pack-grid">
+            <div class="pack-box"><h4>📋 基本信息</h4><div id="packBasic"></div></div>
+            <div class="pack-box"><h4>⚖️ 适用法规与指标体系</h4><div id="packRegs"></div></div>
+            <div class="pack-box"><h4>🔄 全过程执行</h4><div id="packExec"></div></div>
+            <div class="pack-box"><h4>🧾 成果与资料</h4><div id="packFiles"></div></div>
+        </div>
+        <div class="pack-box"><h4>📌 发现与建议</h4><div id="packFindings"></div></div>
+        <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+            <a class="btn btn-secondary" id="lnkWorkflow">→ 流程执行</a>
+            <a class="btn btn-secondary" id="lnkScoring">→ 评分</a>
+            <a class="btn btn-secondary" id="lnkWorkplan">→ 工作计划</a>
+            <a class="btn btn-secondary" id="lnkReport">→ 报告</a>
+            <button class="btn btn-primary" onclick="doArchive()" id="btnArchive">🎓 结项归档(AI提炼经验)</button>
+        </div>
+        <div id="archiveResult" style="margin-top:1rem"></div>
+    </div>
+</main>
+<script src="/static/js/app.js"></script>
+<script src="/static/js/pack.js"></script>
+</body>
+</html>

@@ -22,6 +22,7 @@ async function init() {
                 <small>${p.grade || '未评级'}</small>
             </div>
             <div>
+                <a href="/pack?pid=${p.id}" class="btn btn-sm btn-secondary">📦 项目包</a>
                 <a href="/scoring/${p.id}" class="btn btn-sm btn-secondary">评分</a>
                 <a href="/report/${p.id}" class="btn btn-sm btn-primary">报告</a>
             </div>
