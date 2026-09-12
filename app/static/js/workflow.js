@@ -68,6 +68,61 @@ function renderStageDetail(cur) {
         ${renderCommCard(cur.comm_coord || [])}
         ${renderListCard('⭐ 本阶段工作重点', (cur.key_points || []).map(x => `❗ ${x}`), 'key-list')}
     `;
+
+    // v7.2: 已导入记录展示
+    const rec = cur.records || { files: [], notes: [] };
+    document.getElementById('stageRecords').innerHTML = `
+        ${rec.files.length ? `<b>已上传 (${rec.files.length}):</b>` + rec.files.map(f =>
+            `<span class="badge" style="margin:.15rem">📎 ${esc(f.name)} (${Math.round(f.size / 1024)}KB)</span>`).join('') : ''}
+        ${rec.notes.length ? `<div style="margin-top:.5rem"><b>已记录 (${rec.notes.length}):</b>` + rec.notes.map(n =>
+            `<div class="comm-item" style="border-left:3px solid #0ea5e9;padding:.4rem .8rem;margin:.4rem 0;background:#f8fafc;border-radius:4px"><b>${{ comm: '💬沟通', prereq: '⚡前置', note: '📝备注' }[n.type] || n.type}</b> <small style="color:#888">${(n.at || '').slice(0, 16)}</small><div style="font-size:.9rem">${esc(n.text)}</div></div>`).join('') + '</div>' : ''}
+        ${!rec.files.length && !rec.notes.length ? '<span style="color:#94a3b8">本阶段暂无导入记录</span>' : ''}
+    `;
+}
+
+// ── v7.2: 阶段资料导入 + 记录 + AI调整 ──
+function currentStageId() {
+    const s = (projectData?.all_stages || []).find(x => x.is_current);
+    return s ? s.id : null;
+}
+
+async function uploadStageFile() {
+    const input = document.getElementById('stageFile');
+    const sid = currentStageId();
+    if (!input.files[0] || !sid) { alert('请选择文件'); return; }
+    const fd = new FormData(); fd.append('file', input.files[0]);
+    const res = await fetch(`/api/projects/${PID}/stages/${sid}/upload`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+    input.value = '';
+    init();
+}
+
+async function saveStageNote() {
+    const sid = currentStageId();
+    const text = document.getElementById('noteText').value.trim();
+    if (!sid || !text) { alert('请填写记录内容'); return; }
+    const res = await API(`/api/projects/${PID}/stages/${sid}/note`, { method: 'POST',
+        body: JSON.stringify({ type: document.getElementById('noteType').value, text }) });
+    if (res.error) { alert(res.error); return; }
+    document.getElementById('noteText').value = '';
+    init();
+}
+
+async function runAdjustPlan() {
+    const box = document.getElementById('adjustResult');
+    box.innerHTML = '<div class="spinner"></div> AI分析中(深度推理, 约30-60秒)...';
+    const res = await API(`/api/projects/${PID}/adjust-plan`, { method: 'POST' });
+    if (res.error) { box.innerHTML = `<p style="color:#ef4444">❌ ${res.error}</p>`; return; }
+    const stageName = id => ((projectData?.all_stages || []).find(s => s.id === id) || {}).name || id;
+    box.innerHTML = res.changes.length ? `
+        <div style="background:#fffbeb;border-left:3px solid #f59e0b;padding:.8rem;border-radius:6px">
+            <b>🆕 ${esc(res.focus)}</b> (${(res.ts || '').slice(0, 16)})
+            ${res.changes.map(c => `<div style="margin:.5rem 0;padding:.4rem .6rem;background:#fff;border-radius:4px">
+                <b>${esc(stageName(c.stage_id))}:</b> ${esc(c.change)}
+                <br><small style="color:#666">依据: ${esc(c.reason)}</small></div>`).join('')}
+            <small style="color:#92400e">建议已留痕到项目包，执行时请对照调整。</small>
+        </div>` : `<p style="color:#059669">✅ ${esc(res.focus || 'AI分析完成')}: 后续流程无需调整。</p>`;
 }
 
 function renderListCard(title, items, cls = '') {

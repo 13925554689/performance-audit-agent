@@ -8,6 +8,8 @@
 import os, json, tempfile
 from datetime import datetime
 from . import _call_llm, _log, engine
+from .stages import get_workflow
+_PROCESS_STAGES = get_workflow("standard_8")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KB_PATH = os.path.join(ROOT, "data", "knowledge_base.json")
@@ -281,6 +283,102 @@ def export_archive_report(pid: str) -> dict:
     os.makedirs(os.path.dirname(out), exist_ok=True)
     doc.save(out)
     return {"success": True, "path": out}
+
+
+# ── 2.5 阶段资料导入与流程自适应 (v7.2) ──────────────────
+
+def stage_upload(pid: str, stage_id: str, filename: str, content: bytes) -> dict:
+    """阶段资料/沟通记录/前置情况文件导入 → 存 outputs/<pid>/stages/<stage_id>/ 并记入stage_records"""
+    project = engine.get_project(pid)
+    if not project:
+        return {"error": "项目不存在"}
+    stage_ids = {s["id"] for s in _PROCESS_STAGES}
+    if stage_id not in stage_ids:
+        return {"error": f"未知阶段: {stage_id}"}
+    safe = filename.replace("/", "_").replace("\\", "_")
+    dest = os.path.join(ROOT, "outputs", pid, "stages", stage_id)
+    os.makedirs(dest, exist_ok=True)
+    path = os.path.join(dest, safe)
+    with open(path, "wb") as f:
+        f.write(content)
+    rec = project.stage_records.setdefault(stage_id, {"files": [], "notes": []})
+    rec["files"].append({"name": safe, "size": len(content), "at": datetime.now().isoformat()})
+    project.updated_at = datetime.now().isoformat()
+    engine._save_projects()
+    _log("stage_upload", pid, f"{stage_id} ← {safe}")
+    return {"success": True, "file": safe}
+
+
+def stage_note(pid: str, stage_id: str, note_type: str, text: str) -> dict:
+    """文字记录: 沟通协调过程与结果 / 前置条件落实情况 / 其他备注 (note_type: comm|prereq|note)"""
+    project = engine.get_project(pid)
+    if not project:
+        return {"error": "项目不存在"}
+    stage_ids = {s["id"] for s in _PROCESS_STAGES}
+    if stage_id not in stage_ids:
+        return {"error": f"未知阶段: {stage_id}"}
+    if not text or not text.strip():
+        return {"error": "内容不能为空"}
+    rec = project.stage_records.setdefault(stage_id, {"files": [], "notes": []})
+    rec["notes"].append({"type": note_type, "text": text.strip()[:2000],
+                         "at": datetime.now().isoformat()})
+    project.updated_at = datetime.now().isoformat()
+    engine._save_projects()
+    _log("stage_note", pid, f"{stage_id} [{note_type}] {len(text)}字")
+    return {"success": True}
+
+
+ADJUST_SYSTEM = """你是绩效评价项目管理专家。项目执行中导入了新资料/出现新情况，分析其对后续阶段的影响。
+后续阶段定义: {stages}
+只输出JSON: {{"focus": "10字概括新情况", "changes": [{{"stage_id": "阶段id", "change": "调整建议(30字内)", "reason": "依据(40字内)"}}]}}
+只列确需调整的阶段(0-4个)，依据只能来自给定资料，不编造。无实质影响则changes为空数组。"""
+
+
+def adjust_plan(pid: str) -> dict:
+    """AI根据该项目已导入的全部资料+记录 → 对后续阶段流程给出调整建议"""
+    project = engine.get_project(pid)
+    if not project:
+        return {"error": "项目不存在"}
+    if project.current_stage > len(_PROCESS_STAGES):
+        return {"error": "项目已完成全部阶段，无可调整的后续流程"}
+    stages_desc = "; ".join(f"{s['stage']}.{s['name']}({s['id']})" for s in _PROCESS_STAGES)
+    # 语料: 导入资料清单 + 沟通/前置记录 + 项目概况
+    corpus = [f"项目: {project.name} | {project.project_type} | 预算{project.budget}万 | 第{project.current_stage}阶段"]
+    for s in _PROCESS_STAGES:
+        rec = project.stage_records.get(s["id"])
+        if rec:
+            corpus.append(f"阶段{s['stage']}({s['name']}) 已导入文件: {', '.join(f['name'] for f in rec['files']) or '无'}")
+            corpus += [f"  记录[{n['type']}]: {n['text'][:300]}" for n in rec["notes"]]
+    if getattr(project, "source_doc", {}).get("requirements"):
+        corpus.append("合同关键要求: " + "; ".join(project.source_doc["requirements"]))
+    if len(corpus) <= 1:
+        return {"error": "尚无导入资料或记录，先在各阶段导入资料/填写沟通记录后再试"}
+    # ponytail: 不用deep=True — reasoner把max_tokens烧在思维链导致JSON截断, 结构化短输出chat足够
+    raw = _call_llm(ADJUST_SYSTEM.format(stages=stages_desc), "\n".join(corpus)[:12000],
+                    max_tokens=1500, deep=False)
+    if not raw:
+        return {"error": "LLM调用失败(deepseek/zhipu均不可用)"}
+    parsed = _safe_json(raw)
+    if "changes" not in parsed:
+        return {"error": "LLM返回非JSON", "raw": str(parsed)[:300]}
+    valid_ids = {s["id"] for s in _PROCESS_STAGES}
+    parsed["changes"] = [c for c in parsed["changes"] if c.get("stage_id") in valid_ids][:4]
+    parsed["ts"] = datetime.now().isoformat()
+    project.plan_adjustments.append(parsed)   # 留痕: 项目包可追溯每次调整
+    project.updated_at = datetime.now().isoformat()
+    engine._save_projects()
+    _log("adjust_plan", pid, f"focus={parsed.get('focus','?')} changes={len(parsed['changes'])}")
+    return parsed
+
+
+def pending_adjustments(pid: str) -> list:
+    """该阶段未处理的调整建议(推进阶段时前端提示用) — 全部已注入, 仅供展示"""
+    project = engine.get_project(pid)
+    if not project or not project.plan_adjustments:
+        return []
+    cur = project.current_stage
+    return [a for a in project.plan_adjustments
+            if any(c.get("stage_id") == _PROCESS_STAGES[min(cur, 8) - 1]["id"] for c in a.get("changes", []))]
 
 
 # ── 3. 结项 → 知识沉淀 ─────────────────────────────────

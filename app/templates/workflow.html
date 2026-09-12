@@ -64,6 +64,33 @@
         <ul class="output-list" id="outputList"></ul>
     </div>
 
+    <!-- v7.2: 阶段资料导入与记录 -->
+    <div class="card">
+        <h3>📥 本阶段资料导入与记录</h3>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+            <input type="file" id="stageFile" style="max-width:280px">
+            <button class="btn btn-primary" onclick="uploadStageFile()">上传资料/文件</button>
+        </div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start">
+            <select id="noteType">
+                <option value="comm">💬 沟通协调(过程与结果)</option>
+                <option value="prereq">⚡ 前置条件落实情况</option>
+                <option value="note">📝 其他情况/备注</option>
+            </select>
+            <textarea id="noteText" rows="2" placeholder="记录本阶段沟通、协调、前置条件等情况…" style="flex:1;min-width:240px"></textarea>
+            <button class="btn btn-secondary" onclick="saveStageNote()">保存记录</button>
+        </div>
+        <div id="stageRecords" style="margin-top:.8rem"></div>
+    </div>
+
+    <!-- v7.2: AI流程调整 -->
+    <div class="card">
+        <h3>🔧 AI 流程调整建议</h3>
+        <p style="color:#666;font-size:.9rem">根据本阶段及之前导入的资料、记录的新情况，AI 分析后续阶段是否需要调整。</p>
+        <button class="btn btn-primary" onclick="runAdjustPlan()">🤖 分析新情况并生成调整建议</button>
+        <div id="adjustResult" style="margin-top:.8rem"></div>
+    </div>
+
     <!-- 操作按钮 -->
     <div class="action-bar">
         <button class="btn btn-primary" id="btnAdvance" onclick="advanceStage()">

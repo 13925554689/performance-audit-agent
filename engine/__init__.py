@@ -135,6 +135,8 @@ class AuditProject:
     issues: list = field(default_factory=list)
     suggestions: list = field(default_factory=list)
     evidence_files: list = field(default_factory=list)
+    stage_records: dict = field(default_factory=dict)   # v7.2: {stage_id: {"files":[...],"notes":[...]}} 每阶段导入的资料/沟通协调/前置情况记录
+    plan_adjustments: list = field(default_factory=list) # v7.2: AI根据新资料给出的后续流程调整 [{ts,focus,changes:[{stage_id,change,reason}]}]
     source_doc: dict = field(default_factory=dict)   # v7: 导入的合同/约定书 原件+抽取结果
     summary: str = ""                                # v7: 结项一句话教训
     archived_at: str = ""                            # v7: 归档时间(空=未归档)
@@ -312,7 +314,7 @@ class ProcessEngine:
         }
 
     def get_stage_detail(self, pid: str) -> dict:
-        """获取当前阶段详情 — v6.0 含资料/法规/前置/指引/沟通/重点完整工作包"""
+        """获取当前阶段详情 — v6.0 含资料/法规/前置/指引/沟通/重点完整工作包; v7.2 附已导入记录"""
         project = self._projects.get(pid)
         if not project:
             return {"error": "项目不存在"}
@@ -350,7 +352,9 @@ class ProcessEngine:
                 "comm_coord": stage.get("comm_coord", []),
                 "key_points": stage.get("key_points", []),
                 "outputs": stage["outputs"],
-                "estimated_time": stage["estimated_time"]
+                "estimated_time": stage["estimated_time"],
+                # v7.2: 该阶段已导入的文件+沟通/前置记录 (空列表前端自然隐藏)
+                "records": project.stage_records.get(stage["id"], {"files": [], "notes": []}),
             },
             "all_stages": all_stages,
             "progress": f"{project.current_stage}/{len(PROCESS_STAGES)}",

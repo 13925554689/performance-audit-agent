@@ -308,8 +308,33 @@ from engine.project_pack import (
     extract_project_fields, save_source_file, attach_source,
     build_pack, archive_project, load_knowledge_base,
     learn_and_create, export_archive_report,
+    stage_upload, stage_note, adjust_plan,
 )
 from engine import retrieval
+
+
+@app.route("/api/projects/<pid>/stages/<sid>/upload", methods=["POST"])
+def api_stage_upload(pid, sid):
+    """阶段资料导入: 该阶段需要的资料/法规文件/沟通记录文件/前置证明 → 项目包留痕"""
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "缺少 file 字段"}), 400
+    result = stage_upload(pid, sid, f.filename, f.read())
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@app.route("/api/projects/<pid>/stages/<sid>/note", methods=["POST"])
+def api_stage_note(pid, sid):
+    """阶段文字记录: 沟通协调过程与结果/前置条件落实情况"""
+    data = request.json if request.is_json else {}
+    result = stage_note(pid, sid, data.get("type", "note"), data.get("text", ""))
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@app.route("/api/projects/<pid>/adjust-plan", methods=["POST"])
+def api_adjust_plan(pid):
+    """AI根据已导入资料/新情况 → 后续阶段流程调整建议(留痕到项目包)"""
+    return jsonify(adjust_plan(pid))
 
 
 @app.route("/api/import/batch", methods=["POST"])
