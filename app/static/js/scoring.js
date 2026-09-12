@@ -111,6 +111,16 @@ async function showResult(result) {
                     <span>${d.score}/${d.weight}</span>
                 </div>`
             ).join('')}
+            ${(result.reconciliation || []).length ? `
+            <div style="margin-top:.75rem;background:#fffbeb;border-left:3px solid #f59e0b;padding:.5rem .8rem;border-radius:6px">
+                <b>🔍 勾稽校验 (${result.reconciliation.length}项提示)</b>
+                ${result.reconciliation.map(f => `<div style="margin:.25rem 0;font-size:.9rem">
+                    <span style="color:${f.level === 'ERROR' ? '#ef4444' : '#f59e0b'};font-weight:bold">[${f.level}]</span>
+                    ${f.check}: ${f.detail}</div>`).join('')}
+            </div>` : `
+            <div style="margin-top:.75rem;background:#f0fdf4;border-left:3px solid #22c55e;padding:.4rem .8rem;border-radius:6px;font-size:.9rem">
+                ✅ 勾稽校验通过：维度分合计=总分、评级与总分一致、无超权重
+            </div>`}
         </div>
         <button class="btn btn-primary" style="margin-top:1rem" onclick="submitAllScores()">🔄 重新计算</button>
         <button class="btn btn-secondary" style="margin-top:1rem" onclick="aiSuggest()">🤖 AI评分建议</button>

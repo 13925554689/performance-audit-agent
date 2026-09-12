@@ -399,9 +399,18 @@ class ProcessEngine:
         _log("calculate", pid, f"total={total} grade={project.grade}")
         self._maybe_evolve()  # ponytail: background LLM analysis every 3 scored projects
 
+        # 勾稽自动校验 — 引用本项目实际使用的指标体系(分类不同则维度不同)
+        from engine.reconcile import run_checks
+        from regulations import _CLASSIFICATION_INDEX, _INDEX_MAP
+        idx_key = _CLASSIFICATION_INDEX.get(self.classification_for(project) or "", "project")
+        reconciliation = run_checks(project, _INDEX_MAP.get(idx_key))
+        for f in reconciliation:
+            _log("reconcile", pid, f"[{f['level']}] {f['check']}: {f['detail']}")
+
         return {
             "total_score": total,
             "grade": project.grade,
+            "reconciliation": reconciliation,
             "scores": project.scores,
             "dimensions": [
                 {"name": d["name"], "weight": d["weight"], "score": project.scores.get(d["name"], 0)}

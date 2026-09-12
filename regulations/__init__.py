@@ -302,10 +302,10 @@ SELF_EVAL_INDEX = {
             {"id": "J3", "name": "产出质量达标率", "weight": 15, "type": "定量", "criteria": "达标产出/实际产出×100%"},
             {"id": "J4", "name": "产出时效符合率", "weight": 10, "type": "定量", "criteria": "按时完成产出/计划产出×100%"},
             {"id": "J5", "name": "产出成本控制率", "weight": 10, "type": "定量", "criteria": "实际成本/预算成本×100%"}]},
-        {"name": "效益指标", "weight": 30, "indices": [
-            {"id": "J6", "name": "经济效益实现程度", "weight": 8, "type": "定性", "criteria": "对照绩效目标效益值"},
-            {"id": "J7", "name": "社会效益实现程度", "weight": 8, "type": "定性", "criteria": "对照绩效目标效益值"},
-            {"id": "J8", "name": "生态效益/可持续影响", "weight": 6, "type": "定性", "criteria": "对照绩效目标效益值"},
+        {"name": "效益指标", "weight": 40, "indices": [
+            {"id": "J6", "name": "经济效益实现程度", "weight": 12, "type": "定性", "criteria": "对照绩效目标效益值"},
+            {"id": "J7", "name": "社会效益实现程度", "weight": 12, "type": "定性", "criteria": "对照绩效目标效益值"},
+            {"id": "J8", "name": "生态效益/可持续影响", "weight": 8, "type": "定性", "criteria": "对照绩效目标效益值"},
             {"id": "J9", "name": "服务对象满意度", "weight": 8, "type": "定量", "criteria": "满意度调查≥85%满分"}]},
     ]
 }

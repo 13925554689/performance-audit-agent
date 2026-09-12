@@ -294,6 +294,18 @@ def api_full_workflow(pid):
     return jsonify(engine.get_full_workflow(pid))
 
 
+@app.route("/api/projects/<pid>/reconciliation", methods=["GET"])
+def api_reconciliation(pid):
+    """只读勾稽审计 — 不落盘不改数据, 直接检查当前存储值的勾稽关系"""
+    project = engine._projects.get(pid)
+    if not project:
+        return jsonify({"error": "项目不存在"}), 404
+    from engine.reconcile import run_checks
+    from regulations import _CLASSIFICATION_INDEX, _INDEX_MAP
+    idx_key = _CLASSIFICATION_INDEX.get(engine.classification_for(project) or "", "project")
+    return jsonify(run_checks(project, _INDEX_MAP.get(idx_key)))
+
+
 @app.route("/api/projects/<pid>/work-plan", methods=["GET", "POST"])
 def api_work_plan(pid):
     """一键生成: 工作流程+实施方案+工作计划+人员调配"""
