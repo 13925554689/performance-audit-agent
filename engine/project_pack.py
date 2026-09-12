@@ -67,11 +67,16 @@ def _safe_pid_dir(pid: str) -> str:
     return os.path.join(ROOT, "outputs", pid)
 
 
+def _safe_filename(filename: str) -> str:
+    # ponytail: strip path/ADS chars; NTFS reserved names (CON/NUL) skip — uploads always carry real extensions
+    return filename.replace(":", "_").replace("/", "_").replace("\\", "_")
+
+
 def save_source_file(pid: str, filename: str, content: bytes) -> str:
     """合同原件存入项目包 outputs/<pid>/source/"""
     dest_dir = os.path.join(_safe_pid_dir(pid), "source")
     os.makedirs(dest_dir, exist_ok=True)
-    safe = filename.replace("/", "_").replace("\\", "_")
+    safe = _safe_filename(filename)
     dest = os.path.join(dest_dir, safe)
     with open(dest, "wb") as f:
         f.write(content)
@@ -307,7 +312,7 @@ def stage_upload(pid: str, stage_id: str, filename: str, content: bytes) -> dict
     stage_ids = {s["id"] for s in _PROCESS_STAGES}
     if stage_id not in stage_ids:
         return {"error": f"未知阶段: {stage_id}"}
-    safe = filename.replace("/", "_").replace("\\", "_")
+    safe = _safe_filename(filename)
     dest = os.path.join(_safe_pid_dir(pid), "stages", stage_id)
     os.makedirs(dest, exist_ok=True)
     path = os.path.join(dest, safe)
