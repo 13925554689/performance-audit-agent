@@ -7,8 +7,8 @@ const drop = document.getElementById('drop');
 const fileInput = document.getElementById('fileInput');
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
-drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); if (e.dataTransfer.files[0]) extractFile(e.dataTransfer.files[0]); });
-fileInput.addEventListener('change', () => { if (fileInput.files[0]) extractFile(fileInput.files[0]); });
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); const fs = e.dataTransfer.files; if (fs.length > 1) batchImport(fs); else if (fs[0]) extractFile(fs[0]); });
+fileInput.addEventListener('change', () => { const fs = fileInput.files; if (fs.length > 1) batchImport(fs); else if (fs[0]) extractFile(fs[0]); });
 
 async function extractFile(file) {
     document.getElementById('extractResult').innerHTML = '<div class="spinner"></div> 上传并抽取中...';
@@ -54,6 +54,33 @@ async function confirmCreate() {
     fd.append('extracted', JSON.stringify(d));
     await fetch(`/api/projects/${pid}/import-source`, { method: 'POST', body: fd });
     location.href = `/pack?pid=${pid}`;
+}
+
+// ── 多文件批量导入 ──
+async function batchImport(files) {
+    if (!files || !files.length) return;
+    if (files.length > 20) { alert('单次最多20份，请分批导入'); return; }
+    document.getElementById('extractResult').innerHTML =
+        `<div class="spinner"></div> 批量抽取中(每份需AI解析, 共${files.length}份, 约${files.length * 20}~${files.length * 60}秒)...`;
+    const fd = new FormData();
+    [...files].forEach(f => fd.append('files', f));
+    const res = await fetch('/api/import/batch', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.error) { document.getElementById('extractResult').innerHTML = `<p style="color:#ef4444">❌ ${data.error}</p>`; return; }
+    document.getElementById('extractResult').innerHTML = `
+        <div style="background:#f0fdf4;border-left:3px solid #22c55e;padding:.8rem;border-radius:6px">
+            <b>✅ 批量导入完成: 成功 ${data.ok}/${data.created.length} 份</b>
+            ${data.created.map(c => c.pid
+                ? `<div class="kv"><b>${esc(c.filename)}</b><span><a href="/pack?pid=${c.pid}">📦 ${esc(c.name)}</a> (置信度:${c.confidence || '?'})</span></div>`
+                : `<div class="kv"><b>${esc(c.filename)}</b><span style="color:#ef4444">❌ ${esc(c.error)}</span></div>`).join('')}
+        </div>`;
+}
+
+// ── 归档报告导出 word ──
+function exportArchiveReport() {
+    const pid = URLP.get('pid');
+    if (!pid) return;
+    window.location.href = `/api/projects/${pid}/archive-report`;
 }
 
 // ── 项目包视图 ──

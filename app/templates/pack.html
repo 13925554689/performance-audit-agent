@@ -29,8 +29,8 @@
     <div class="card">
         <h3>📥 导入合同 / 业务约定书 / 实施方案 立项</h3>
         <div class="drop" id="drop" onclick="document.getElementById('fileInput').click()">
-            点击选择或拖入 <b>PDF / Word / TXT</b> 合同文件 → AI 自动抽取项目要素
-            <input type="file" id="fileInput" accept=".pdf,.docx,.doc,.txt,.md" hidden>
+            点击选择或拖入 <b>PDF / Word / TXT</b> 合同文件（支持多选批量）→ AI 自动抽取项目要素
+            <input type="file" id="fileInput" accept=".pdf,.docx,.doc,.txt,.md" multiple hidden>
         </div>
         <div id="extractResult" style="margin-top:1rem"></div>
     </div>
@@ -50,6 +50,7 @@
             <a class="btn btn-secondary" id="lnkWorkplan">→ 工作计划</a>
             <a class="btn btn-secondary" id="lnkReport">→ 报告</a>
             <button class="btn btn-primary" onclick="doArchive()" id="btnArchive">🎓 结项归档(AI提炼经验)</button>
+            <button class="btn btn-secondary" onclick="exportArchiveReport()">📄 导出归档报告(Word)</button>
         </div>
         <div id="archiveResult" style="margin-top:1rem"></div>
     </div>

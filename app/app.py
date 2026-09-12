@@ -307,7 +307,48 @@ def api_full_workflow(pid):
 from engine.project_pack import (
     extract_project_fields, save_source_file, attach_source,
     build_pack, archive_project, load_knowledge_base,
+    learn_and_create, export_archive_report,
 )
+from engine import retrieval
+
+
+@app.route("/api/import/batch", methods=["POST"])
+def api_import_batch():
+    """多文件批量导入: 多份合同/约定书 → LLM逐份抽取 → 一次性建N个项目(原件各自入库)"""
+    files = request.files.getlist("files") or request.files.getlist("file")
+    files = [f for f in files if f and f.filename]
+    if not files:
+        return jsonify({"error": "缺少 files 字段(multipart/form-data, 可多文件)"}), 400
+    if len(files) > 20:
+        return jsonify({"error": "单次最多20份(批量抽取耗时长, 请分批)"}), 400
+    result = learn_and_create({}, [{"filename": f.filename, "bytes": f.read()} for f in files])
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@app.route("/api/search", methods=["GET"])
+def api_search():
+    """语义检索: 法规+案例+归档项目经验 (智谱embedding-3, 无key时词袋降级)"""
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"error": "缺少参数 q"}), 400
+    kind = request.args.get("kind") or None
+    if kind not in (None, "", "regulation", "case", "archived_project"):
+        return jsonify({"error": f"kind 不支持: {kind}"}), 400
+    try:
+        top_k = min(20, max(1, int(request.args.get("top_k", 5))))
+    except ValueError:
+        return jsonify({"error": "top_k 必须是整数"}), 400
+    return jsonify(retrieval.search(q, top_k=top_k, kind=kind or None))
+
+
+@app.route("/api/projects/<pid>/archive-report", methods=["POST"])
+def api_archive_report(pid):
+    """生成结项归档报告 word 文件(存入项目包 deliverables, 同时返回下载)"""
+    result = export_archive_report(pid)
+    if result.get("error"):
+        return jsonify(result), 404 if result["error"] == "项目不存在" else 400
+    return send_file(result["path"], as_attachment=True,
+                     download_name=f"结项归档报告_{pid}.docx")
 
 
 @app.route("/api/import/extract", methods=["POST"])

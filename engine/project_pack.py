@@ -5,7 +5,7 @@
   2. build_pack: 项目包 = 基本信息+适用法规+执行记录+成果+资料 全聚合
   3. archive_project: 结项 → LLM提炼经验教训 → data/knowledge_base.json (注入后续AI建议)
 """
-import os, sys, json, tempfile
+import os, json, tempfile
 from datetime import datetime
 from . import _call_llm, _log, engine
 
@@ -129,6 +129,158 @@ def build_pack(pid: str) -> dict:
         "summary": project.summary if getattr(project, "summary", None) else None,
         "archived": bool(getattr(project, "archived_at", None)),
     }
+
+
+def learn_and_create(extracted: dict, files: list[dict]) -> dict:
+    """批量导入: 依次LLM抽取每份文件 → 用户确认后一次性建N个项目(原件各自入库)。
+
+    files: [{filename, bytes}]。extracted 可含 {name, org_name, org_type, project_type,
+    budget, year} 覆盖LLM抽取值(单文件模式用)。
+    """
+    from . import engine
+    created = []
+    for f in files:
+        import tempfile
+        ext = os.path.splitext(f["filename"])[1].lower()
+        if ext not in (".pdf", ".docx", ".doc", ".txt", ".md"):
+            created.append({"filename": f["filename"], "error": f"不支持的格式: {ext}"})
+            continue
+        fd, tmp = tempfile.mkstemp(suffix=ext)
+        os.close(fd)  # ponytail: Windows mkstemp句柄不关会锁文件
+        try:
+            with open(tmp, "wb") as fh:
+                fh.write(f["bytes"])
+            text = _doc_to_text(tmp)
+        finally:
+            try:
+                os.unlink(tmp)
+            except PermissionError:
+                pass
+        if len(text.strip()) < 50:
+            created.append({"filename": f["filename"], "error": "文本过少(可能为扫描件)"})
+            continue
+        extracted = dict(extracted or {})
+        fields = extract_project_fields(text)
+        fields.update({k: v for k, v in extracted.items() if v})   # 手填覆盖LLM
+        if fields.get("error"):
+            created.append({"filename": f["filename"], "error": fields["error"]})
+            continue
+        proj = engine.create_project(
+            name=fields.get("project_name") or os.path.splitext(f["filename"])[0],
+            org_name=fields.get("org_name") or "待补充",
+            org_type=fields.get("org_type") or "事业单位",
+            project_type=fields.get("project_type") or "项目支出",
+            budget=float(fields.get("budget") or 0),
+            year=int(fields.get("year") or datetime.now().year),
+        )
+        pid = proj.id
+        path = save_source_file(pid, f["filename"], f["bytes"])
+        attach_source(pid, path, fields)
+        created.append({"filename": f["filename"], "pid": pid,
+                        "name": proj.name, "confidence": fields.get("confidence")})
+    return {"success": True, "created": created,
+            "ok": sum(1 for c in created if c.get("pid"))}
+
+
+def export_archive_report(pid: str) -> dict:
+    """结项归档报告导出 word: 项目包全量数据 → docx (python-docx)。"""
+    pack = build_pack(pid)
+    if pack.get("error"):
+        return pack
+    project = engine.get_project(pid)
+    from docx import Document
+    from docx.shared import Pt
+    doc = Document()
+    doc.styles["Normal"].font.name = "宋体"
+    doc.styles["Normal"].font.size = Pt(12)
+
+    def h(t, lv=1):
+        doc.add_heading(t, level=lv)
+
+    def p(t, bold=False):
+        para = doc.add_paragraph()
+        run = para.add_run(str(t)) if t not in (None, "") else para.add_run("—")
+        run.bold = bold
+
+    def table(rows: list[list], header: bool = True):
+        if not rows:
+            return
+        t = doc.add_table(rows=len(rows), cols=len(rows[0]))
+        t.style = "Table Grid"
+        for i, row in enumerate(rows):
+            for j, v in enumerate(row):
+                t.cell(i, j).text = str(v) if v not in (None, "") else "—"
+        if header:
+            for j, v in enumerate(rows[0]):
+                t.cell(0, j).paragraphs[0].runs[0].bold = True
+
+    b, ex, regs, fd = pack["basic"], pack["execution"], pack["regulations"], pack["findings"]
+    sd = b.get("source_doc") or {}
+    h(f"绩效评价项目结项归档报告 — {b['name']}", 0)
+    p(f"项目编号: {b['id']}    生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}", bold=True)
+
+    h("一、项目基本信息")
+    table([["项目名称", b["name"], "被评价单位", b["org_name"]],
+           ["单位类型", b["org_type"], "评价类型", b["project_type"]],
+           ["预算(万元)", b["budget"], "评价年度", b["year"]],
+           ["立项依据", sd.get("file", "—"), "导入时间", (sd.get("imported_at") or "—")[:10]],
+           ["结项归档", (getattr(project, "archived_at", None) or "未归档")[:10],
+            "AI一句话教训", getattr(project, "summary", None) or "—"]])
+
+    h("二、适用法规与指标体系")
+    if regs.get("kit"):
+        p("指标体系: " + str(regs.get("index_name")))
+        p("评价流程: " + str(regs["kit"].get("workflow") or "—"))
+        p("适用法规: " + "; ".join(r["name"] for r in regs["kit"]["classification"]["reg_basis"]))
+    else:
+        p("未匹配分类，使用项目支出通用指标体系")
+
+    h("三、全过程执行记录")
+    rows = [["阶段", "名称", "状态"]]
+    rows += [[str(s["stage"]), s["name"], {"completed": "完成", "in_progress": "进行中"}.get(s["status"], "未开始")] for s in ex["stages"]]
+    table(rows)
+    p(f"当前进度: 第{ex['current_stage']}阶段 ({ex['percent']}%)", bold=True)
+
+    h("四、评分结果")
+    if ex["scores"] and sum(1 for v in ex["scores"].values() if v):
+        table([["维度", "得分"]] + [[k, v] for k, v in ex["scores"].items()] +
+              [["总分", ex["total_score"]], ["评级", ex["grade"] or "—"]])
+    else:
+        p("未评分")
+
+    h("五、发现与建议")
+    if fd["issues"]:
+        table([["严重度", "问题"]] + [[i["severity"], i["issue"]] for i in fd["issues"]])
+    if fd["suggestions"]:
+        table([["建议"]] + [[s["suggestion"]] for s in fd["suggestions"]])
+    if not fd["issues"] and not fd["suggestions"]:
+        p("无记录")
+
+    h("六、资料清单")
+    if pack["files"]:
+        table([["类别", "文件", "大小(KB)"]] +
+              [[{"source": "立项原件", "deliverables": "成果文件"}.get(f["section"], f["section"]),
+                f["name"], round(f["size"] / 1024)] for f in pack["files"]])
+    else:
+        p("无")
+
+    h("七、归档经验(AI提炼)" if pack["archived"] else "七、归档经验(未归档)")
+    from engine.project_pack import load_knowledge_base
+    entry = next((e for e in load_knowledge_base() if e.get("pid") == pid), None)
+    if entry:
+        l = entry.get("lessons", {})
+        for key, title in (("issue_patterns", "高发问题模式"), ("effective_practices", "有效做法"),
+                           ("template_tips", "模板要点"), ("indicator_insights", "指标心得")):
+            for x in (l.get(key) or []):
+                p("• " + str(x))
+        p("核心教训: " + str(l.get("one_line_lesson", "—")), bold=True)
+    else:
+        p("项目未归档或无提炼结果。可先在项目包页执行「结项归档」。")
+
+    out = os.path.join(ROOT, "outputs", pid, "deliverables", f"归档报告_{pid}.docx")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    doc.save(out)
+    return {"success": True, "path": out}
 
 
 # ── 3. 结项 → 知识沉淀 ─────────────────────────────────
