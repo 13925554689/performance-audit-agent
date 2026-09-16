@@ -460,7 +460,7 @@ def archive_project(pid: str) -> dict:
         "建议": [s["suggestion"] for s in project.suggestions],
         "分类": pack["regulations"]["index_name"],
     }, ensure_ascii=False)
-    raw = _call_llm(ARCHIVE_SYSTEM, user[:10000], max_tokens=2000, deep=True)
+    raw = _call_llm(ARCHIVE_SYSTEM, user[:10000], max_tokens=3000, deep=False)  # ponytail: JSON输出禁reasoner(思维链吃max_tokens致截断), llm-output-verification §8
     if not raw:
         return {"error": "LLM调用失败(deepseek/zhipu均不可用)，未落知识库，请稍后重试"}  # ponytail: 审查P2 — 畸形lessons不进KB污染学习池
     lessons = _safe_json(raw)

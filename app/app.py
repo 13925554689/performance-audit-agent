@@ -518,4 +518,4 @@ if __name__ == "__main__":
     print(f"\n  访问: http://localhost:5199")
     print("=" * 60 + "\n")
     # ponytail: debug 默认开(本地开发)；生产设 FLASK_DEBUG=0 关闭(禁用Werkzeug调试器RCE面)
-    app.run(host="127.0.0.1", port=5199, debug=os.environ.get("FLASK_DEBUG", "1") == "1")
+    app.run(host="127.0.0.1", port=int(os.environ.get("PORT", 5199)), debug=os.environ.get("FLASK_DEBUG", "1") == "1")
