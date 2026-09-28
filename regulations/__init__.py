@@ -14,6 +14,7 @@ from regulations.classification import (
 )
 from regulations.knowledge_update import (
     EXTRA_REGULATIONS, EXTRA_CASES, COST_PERFORMANCE_KB, PLAN_REVIEW_CHECKLIST,
+    AUDIT_GUIDE_KB, COST_ANALYSIS_TEMPLATES_KB,
 )
 
 # ═══════════════════════════════════════════════════════════

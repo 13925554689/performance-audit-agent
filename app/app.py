@@ -16,6 +16,7 @@ from regulations import (
     search_regulations, get_index_system, get_case,
     list_classifications, get_classification_kit, search_classifications,
     COST_PERFORMANCE_KB, PLAN_REVIEW_CHECKLIST,
+    AUDIT_GUIDE_KB, COST_ANALYSIS_TEMPLATES_KB,
 )
 
 app = Flask(__name__)
@@ -288,6 +289,18 @@ def api_cost_kb():
 def api_plan_review():
     """方案质量评审自查清单（17条常见缺陷+必备要素）"""
     return jsonify(PLAN_REVIEW_CHECKLIST)
+
+
+@app.route("/api/audit-guide-kb", methods=["GET"])
+def api_audit_guide_kb():
+    """绩效审计实务知识库（《绩效审计实务指南》10章：五阶段/13评价方法/抽样矩阵/企业22定量指标/基建8可行性指标）"""
+    return jsonify(AUDIT_GUIDE_KB)
+
+
+@app.route("/api/cost-analysis-templates", methods=["GET"])
+def api_cost_analysis_templates():
+    """成本预算绩效分析工作范本（上海市财政局8范本：资料清单16项/指标规则/标杆值依据/报告结构）"""
+    return jsonify(COST_ANALYSIS_TEMPLATES_KB)
 
 
 # ═══════════════════════════════════════════════

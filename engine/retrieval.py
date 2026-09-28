@@ -17,8 +17,9 @@ _DIM_FALLBACK: list | None = None   # ponytail: 零依赖降级向量，词袋ha
 
 
 def _corpus() -> list[dict]:
-    """构建检索语料: 9法规 + 8案例 + N归档经验。"""
-    from regulations import REGULATIONS, CASE_LIBRARY
+    """构建检索语料: 9法规 + 8案例 + 2文档知识包 + N归档经验。"""
+    from regulations import (REGULATIONS, CASE_LIBRARY, AUDIT_GUIDE_KB,
+                             COST_ANALYSIS_TEMPLATES_KB)
     from engine.project_pack import load_knowledge_base
     docs = []
     for r in REGULATIONS:
@@ -33,6 +34,17 @@ def _corpus() -> list[dict]:
                      "name": f"归档:{e.get('name','')}",
                      "text": f"{e.get('name','')} {e.get('project_type','')} 评级{e.get('grade','')} " +
                              json.dumps(e.get("lessons", {}), ensure_ascii=False)})
+    docs.append({"kind": "knowledge", "ref_id": "audit_guide", "name": "绩效审计实务指南知识包",
+                 "text": "绩效审计 " + AUDIT_GUIDE_KB["three_e"] + " " +
+                         " ".join(AUDIT_GUIDE_KB["evaluation_methods_13"] + AUDIT_GUIDE_KB["report_structure"]) +
+                         " " + json.dumps(AUDIT_GUIDE_KB["infra_feasibility_indicators"], ensure_ascii=False) +
+                         " " + json.dumps(AUDIT_GUIDE_KB["enterprise_quantitative"], ensure_ascii=False) +
+                         " 抽样矩阵 " + json.dumps(AUDIT_GUIDE_KB["sampling_matrix"], ensure_ascii=False)})
+    docs.append({"kind": "knowledge", "ref_id": "cost_templates", "name": "成本预算绩效分析工作范本知识包",
+                 "text": "成本预算绩效分析 上海范本 成本核算 支出标准 " +
+                         json.dumps(COST_ANALYSIS_TEMPLATES_KB["indicator_rules"], ensure_ascii=False) +
+                         " " + json.dumps(COST_ANALYSIS_TEMPLATES_KB["report_highlights"], ensure_ascii=False) +
+                         " " + json.dumps(COST_ANALYSIS_TEMPLATES_KB["benchmark_bases"], ensure_ascii=False)})
     return docs
 
 
