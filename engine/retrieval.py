@@ -34,17 +34,23 @@ def _corpus() -> list[dict]:
                      "name": f"归档:{e.get('name','')}",
                      "text": f"{e.get('name','')} {e.get('project_type','')} 评级{e.get('grade','')} " +
                              json.dumps(e.get("lessons", {}), ensure_ascii=False)})
+    # ponytail: 整包序列化而非逐键抽取 — 字段全覆盖且键缺失不再KeyError
     docs.append({"kind": "knowledge", "ref_id": "audit_guide", "name": "绩效审计实务指南知识包",
-                 "text": "绩效审计 " + AUDIT_GUIDE_KB["three_e"] + " " +
-                         " ".join(AUDIT_GUIDE_KB["evaluation_methods_13"] + AUDIT_GUIDE_KB["report_structure"]) +
-                         " " + json.dumps(AUDIT_GUIDE_KB["infra_feasibility_indicators"], ensure_ascii=False) +
-                         " " + json.dumps(AUDIT_GUIDE_KB["enterprise_quantitative"], ensure_ascii=False) +
-                         " 抽样矩阵 " + json.dumps(AUDIT_GUIDE_KB["sampling_matrix"], ensure_ascii=False)})
+                 "text": "绩效审计 " + json.dumps(AUDIT_GUIDE_KB, ensure_ascii=False)})
     docs.append({"kind": "knowledge", "ref_id": "cost_templates", "name": "成本预算绩效分析工作范本知识包",
                  "text": "成本预算绩效分析 上海范本 成本核算 支出标准 " +
-                         json.dumps(COST_ANALYSIS_TEMPLATES_KB["indicator_rules"], ensure_ascii=False) +
-                         " " + json.dumps(COST_ANALYSIS_TEMPLATES_KB["report_highlights"], ensure_ascii=False) +
-                         " " + json.dumps(COST_ANALYSIS_TEMPLATES_KB["benchmark_bases"], ensure_ascii=False)})
+                         json.dumps(COST_ANALYSIS_TEMPLATES_KB, ensure_ascii=False)})
+    for path, rid, name in (("docs/learning/绩效审计实务指南方法论.md", "audit_guide_方法论", "绩效审计实务指南方法论"),
+                            ("docs/learning/成本预算绩效分析工作范本方法论.md", "cost_templates_方法论", "成本预算绩效分析工作范本方法论")):
+        fp = os.path.join(ROOT, path)
+        if os.path.exists(fp):
+            docs.append({"kind": "knowledge", "ref_id": rid, "name": name,
+                         "text": open(fp, encoding="utf-8").read()})
+    # 启动级自检: 关键字段字面值必须在语料中（fail fast 于建语料而非 500 于检索）
+    ag = next(d for d in docs if d["ref_id"] == "audit_guide")["text"]
+    assert "进点会" in ag and "重大决策事项" in ag, "AUDIT_GUIDE_KB 语料缺关键字段"
+    ct = next(d for d in docs if d["ref_id"] == "cost_templates")["text"]
+    assert "资料准备清单" in ct and "benchmark_bases" in ct, "COST_ANALYSIS_TEMPLATES_KB 语料缺关键字段"
     return docs
 
 
