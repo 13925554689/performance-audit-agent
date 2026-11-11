@@ -148,10 +148,16 @@ def search(query: str, top_k: int = 5, kind: str = None) -> dict:
 
     key = {d["kind"] + "|" + d["ref_id"] for d in docs}
     kv = [(k, v) for k, v in idx["docs"].items() if k in key]
-    qv, source = _embed([query])
+    # ponytail: 查询向量必须用缓存source避免混维(文档fallback→查询api=1024 vs 2048)
+    if idx.get("source") == "fallback":
+        from engine.retrieval import _fallback_vec
+        qv = [_fallback_vec(query)]
+        qsource = "fallback"
+    else:
+        qv, qsource = _embed([query])
     scored = sorted(((_cosine(qv[0], v), k) for k, v in kv), reverse=True)[:top_k]
     meta = {d["kind"] + "|" + d["ref_id"]: d for d in docs}
-    return {"engine": source, "corpus": len(docs), "results": [
+    return {"engine": qsource, "corpus": len(docs), "results": [
         {"score": round(s, 4), "kind": k.split("|")[0], "ref_id": k.split("|")[1],
          "name": meta[k]["name"]} for s, k in scored]}
 
