@@ -147,10 +147,21 @@ def batch_score(industry_code: str, indicators: dict) -> dict:  # ponytail: dict
     """
     批量评分: {指标名: 实际值} → 总分 + 各指标明细
     
-    权重分配(参考22指标体系):
-    - 一级指标(4个): 盈利能力30% + 资产质量25% + 债务风险25% + 经营增长20%
-    - 二级指标权重由一级指标均分
+    权重分配(财政部标准):
+    - 盈利能力(30%): 净资产收益率/总资产报酬率/营业收入利润率/成本费用利润率/盈余现金保障倍数
+    - 资产质量(25%): 总资产周转率/应收账款周转率/存货周转率/流动资产周转率
+    - 债务风险(25%): 资产负债率/带息负债比率/速动比率/现金流动负债比率/营运资金配置比率
+    - 经营增长(20%): 营业收入增长率/总资产增长率/营业利润增长率/技术投入比率/两金占流动资产比重
     """
+    # ponytail: 维度权重dict，指标按出现频次分配子权重
+    WEIGHTS = {
+        "净资产收益率": 0.30/5, "总资产报酬率": 0.30/5, "营业收入利润率": 0.30/5, "成本费用利润率": 0.30/5, "盈余现金保障倍数": 0.30/5,
+        "总资产周转率": 0.25/4, "应收账款周转率": 0.25/4, "存货周转率": 0.25/4, "流动资产周转率": 0.25/4,
+        "资产负债率": 0.25/5, "带息负债比率": 0.25/5, "速动比率": 0.25/5, "现金流动负债比率": 0.25/5, "营运资金配置比率": 0.25/5,
+        "营业收入增长率": 0.20/5, "总资产增长率": 0.20/5, "营业利润增长率": 0.20/5, "技术投入比率": 0.20/5, "两金占流动资产比重": 0.20/5,
+        "百元收入支付的成本费用": 0.05, "劳动效率": 0.05, "营业利润率": 0.05  # ponytail: 未分类指标等权补足
+    }
+    
     ind = get_industry_standard(industry_code=industry_code)
     if not ind:
         return {"error": f"行业{industry_code}未找到"}
@@ -172,13 +183,15 @@ def batch_score(industry_code: str, indicators: dict) -> dict:  # ponytail: dict
         if "error" in r:
             errors.append({"indicator": name, "reason": r["error"]})
         else:
-            results.append({"indicator": name, "actual": value, **r})
-            total_score += r["score"]
+            w = WEIGHTS.get(name, 1.0 / len(indicators))  # ponytail: 未知指标等权兜底
+            results.append({"indicator": name, "actual": value, "weight": round(w, 4), **r})
+            total_score += r["score"] * w
     
     if not results:
         return {"error": "无有效指标", "errors": errors}
     
-    avg_score = round(total_score / len(results), 1)
+    # ponytail: 权重已应用于total_score，直接用加权分
+    avg_score = round(total_score, 1)
     final_grade = "优秀" if avg_score >= 90 else "良好" if avg_score >= 75 else "平均" if avg_score >= 60 else "较低" if avg_score >= 40 else "较差"
     
     ret = {
