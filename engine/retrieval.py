@@ -19,7 +19,8 @@ _DIM_FALLBACK: list | None = None   # ponytail: 零依赖降级向量，词袋ha
 def _corpus() -> list[dict]:
     """构建检索语料: 9法规 + 8案例 + 2文档知识包 + N归档经验。"""
     from regulations import (REGULATIONS, CASE_LIBRARY, AUDIT_GUIDE_KB,
-                             COST_ANALYSIS_TEMPLATES_KB)
+                             COST_ANALYSIS_TEMPLATES_KB, ENTERPRISE_STANDARDS_2026,
+                             PRE_EVALUATION_KB)
     from engine.project_pack import load_knowledge_base
     docs = []
     for r in REGULATIONS:
@@ -40,6 +41,12 @@ def _corpus() -> list[dict]:
     docs.append({"kind": "knowledge", "ref_id": "cost_templates", "name": "成本预算绩效分析工作范本知识包",
                  "text": "成本预算绩效分析 上海范本 成本核算 支出标准 " +
                          json.dumps(COST_ANALYSIS_TEMPLATES_KB, ensure_ascii=False)})
+    docs.append({"kind": "knowledge", "ref_id": "enterprise_standards_2026", "name": "企业绩效评价标准值2026",
+                 "text": "企业绩效评价 标准值 行业对标 财务指标 " +
+                         json.dumps(ENTERPRISE_STANDARDS_2026, ensure_ascii=False)})
+    docs.append({"kind": "knowledge", "ref_id": "pre_evaluation", "name": "事前绩效评估知识库",
+                 "text": "事前绩效评估 必要性 可行性 绩效性 非竞争性 竞争性 预算编制 " +
+                         json.dumps(PRE_EVALUATION_KB, ensure_ascii=False)})
     for path, rid, name in (("docs/learning/绩效审计实务指南方法论.md", "audit_guide_方法论", "绩效审计实务指南方法论"),
                             ("docs/learning/成本预算绩效分析工作范本方法论.md", "cost_templates_方法论", "成本预算绩效分析工作范本方法论")):
         fp = os.path.join(ROOT, path)
@@ -66,12 +73,13 @@ def _fallback_vec(text: str) -> list[float]:
     return v
 
 
-def _embed(texts: list[str]) -> tuple[list[list[float]], str]:
+def _embed(texts: list[str], max_len: int = 6000) -> tuple[list[list[float]], str]:  # ponytail: 6k字避免1210错误
     """批量调用智谱embedding。返回(向量列表, 'api'|'fallback')。"""
     global _DIM_FALLBACK
     key = os.environ.get("ZHIPU_API_KEY") or os.environ.get("GLM_API_KEY") or os.environ.get("ZAI_API_KEY")
     if not key:
         return [_fallback_vec(t) for t in texts], "fallback"
+    texts = [t[:max_len] for t in texts]  # ponytail: 截断过长文本
     out = []
     for i in range(0, len(texts), 16):   # ponytail: 批16, 语料<64条一次循环够用
         body = json.dumps({"model": EMB_MODEL, "input": texts[i:i + 16]}).encode()
@@ -83,11 +91,15 @@ def _embed(texts: list[str]) -> tuple[list[list[float]], str]:
                 d = json.loads(resp.read())
             out += [item["embedding"] for item in d["data"]]
         except Exception:
+            # ponytail: 单批失败整批降级(保留逻辑一致性)
             return [_fallback_vec(t) for t in texts], "fallback"
     return out, "api"
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
+    # ponytail: 维度不等返回0(混维缓存bug)
+    if len(a) != len(b):
+        return 0.0
     na, nb = math.sqrt(sum(x * x for x in a)), math.sqrt(sum(x * x for x in b))
     if not na or not nb:
         return 0.0
@@ -125,11 +137,13 @@ def search(query: str, top_k: int = 5, kind: str = None) -> dict:
         return {"results": [], "engine": "none", "corpus": len(docs)}
 
     fp = _fingerprint(docs)
+    vecs, source = _embed([d["text"] for d in docs])
+    # ponytail: 缓存键含source+dim避免混维
+    cache_key = f"{fp}_{source}_{len(vecs[0]) if vecs else 0}"
     idx = _load_index()
-    if idx.get("fingerprint") != fp or idx.get("v") != 3:   # v3: fallback向量改确定性hash, 旧缓存坐标系作废
-        vecs, source = _embed([d["text"] for d in docs])
-        idx = {"v": 3, "fingerprint": fp, "source": source, "built_at": datetime.now().isoformat(),
-               "dim": len(vecs[0]), "docs": {d["kind"] + "|" + d["ref_id"]: v for d, v in zip(docs, vecs)}}
+    if idx.get("cache_key") != cache_key:
+        idx = {"cache_key": cache_key, "fingerprint": fp, "source": source, "built_at": datetime.now().isoformat(),
+               "docs": {d["kind"] + "|" + d["ref_id"]: v for d, v in zip(docs, vecs)}}
         _save_index(idx)
 
     key = {d["kind"] + "|" + d["ref_id"] for d in docs}

@@ -17,6 +17,8 @@ from regulations import (
     list_classifications, get_classification_kit, search_classifications,
     COST_PERFORMANCE_KB, PLAN_REVIEW_CHECKLIST,
     AUDIT_GUIDE_KB, COST_ANALYSIS_TEMPLATES_KB,
+    ENTERPRISE_STANDARDS_2026, get_industry_standard, score_indicator, batch_score,
+    PRE_EVALUATION_KB, get_evaluation_indicators, get_report_template,
 )
 
 app = Flask(__name__)
@@ -80,6 +82,12 @@ def regulations_page():
 @app.route("/classifications")
 def classifications_page():
     return render_template("classifications.html")
+
+
+@app.route("/enterprise")
+def enterprise_page():
+    """企业绩效评价标准值对标页面"""
+    return render_template("enterprise.html")
 
 
 @app.route("/ai")
@@ -301,6 +309,44 @@ def api_audit_guide_kb():
 def api_cost_analysis_templates():
     """成本预算绩效分析工作范本（上海市财政局8范本：资料清单16项/指标规则/标杆值依据/报告结构）"""
     return jsonify(COST_ANALYSIS_TEMPLATES_KB)
+
+
+@app.route("/api/enterprise-standards-2026", methods=["GET"])
+def api_enterprise_standards():
+    """企业绩效评价标准值2026（28行业×5档×22指标）"""
+    industry = request.args.get("industry")
+    if industry:
+        return jsonify(get_industry_standard(industry_code=industry) or {"error": "行业未找到"})
+    return jsonify(ENTERPRISE_STANDARDS_2026)
+
+
+@app.route("/api/enterprise-score", methods=["POST"])
+def api_enterprise_score():
+    """企业指标评分: {industry_code, indicators: {指标名: 实际值}} → 总分+明细"""
+    data = request.get_json(silent=True) or {}
+    industry_code = data.get("industry_code")
+    indicators = data.get("indicators")
+    if not industry_code or not indicators:
+        return jsonify({"error": "缺少 industry_code 或 indicators"}), 400
+    if not isinstance(indicators, dict):
+        return jsonify({"error": "indicators 必须为对象"}), 400
+    return jsonify(batch_score(industry_code, indicators))
+
+
+@app.route("/api/pre-evaluation", methods=["GET"])
+def api_pre_evaluation():
+    """事前绩效评估知识库 — 三维度/两模式/五方法"""
+    mode = request.args.get("mode")  # non_competitive / competitive
+    if mode:
+        return jsonify({"mode": mode, "indicators": get_evaluation_indicators(mode)})
+    return jsonify(PRE_EVALUATION_KB)
+
+
+@app.route("/api/pre-evaluation/report-template", methods=["GET"])
+def api_pre_evaluation_report():
+    """事前评估报告模板 — project/policy"""
+    eval_type = request.args.get("type", "project")
+    return jsonify({"type": eval_type, "structure": get_report_template(eval_type)})
 
 
 # ═══════════════════════════════════════════════

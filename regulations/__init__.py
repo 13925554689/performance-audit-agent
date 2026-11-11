@@ -16,6 +16,12 @@ from regulations.knowledge_update import (
     EXTRA_REGULATIONS, EXTRA_CASES, COST_PERFORMANCE_KB, PLAN_REVIEW_CHECKLIST,
     AUDIT_GUIDE_KB, COST_ANALYSIS_TEMPLATES_KB,
 )
+from regulations.enterprise_standards_2026 import (
+    ENTERPRISE_STANDARDS_2026, get_industry_standard, score_indicator, batch_score,
+)
+from regulations.pre_evaluation import (
+    PRE_EVALUATION_KB, get_evaluation_indicators, get_report_template,
+)
 
 # ═══════════════════════════════════════════════════════════
 # 1. 法规清单

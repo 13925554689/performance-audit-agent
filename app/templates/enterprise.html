@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>企业绩效评价 - 标准值对标</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .card { background: white; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        h1 { font-size: 24px; margin-bottom: 20px; color: #333; }
+        h2 { font-size: 18px; margin-bottom: 16px; color: #555; }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: #666; }
+        select, input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        button { background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
+        button:hover { background: #2563eb; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .indicator-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
+        .indicator-item { padding: 12px; border: 1px solid #e5e7eb; border-radius: 4px; }
+        .indicator-item label { font-size: 13px; margin-bottom: 4px; }
+        .result-card { margin-top: 20px; }
+        .score-display { text-align: center; padding: 32px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white; margin-bottom: 24px; }
+        .score-number { font-size: 48px; font-weight: bold; margin: 8px 0; }
+        .score-grade { font-size: 20px; opacity: 0.9; }
+        .detail-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        .detail-table th, .detail-table td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        .detail-table th { background: #f9fafb; font-weight: 600; color: #374151; }
+        .grade-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+        .grade-优秀 { background: #dcfce7; color: #166534; }
+        .grade-良好 { background: #dbeafe; color: #1e40af; }
+        .grade-平均 { background: #fef3c7; color: #92400e; }
+        .grade-较低 { background: #fed7aa; color: #9a3412; }
+        .grade-较差 { background: #fee2e2; color: #991b1b; }
+        .loading { text-align: center; padding: 40px; color: #9ca3af; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>📊 企业绩效评价 - 标准值对标</h1>
+            <p style="color: #6b7280; margin-bottom: 24px;">根据财政部《企业绩效评价标准值2026》进行行业对标评分</p>
+            
+            <div class="form-group">
+                <label>选择行业</label>
+                <select id="industry" onchange="loadStandards()">
+                    <option value="">-- 请选择行业 --</option>
+                </select>
+            </div>
+
+            <div id="indicators" style="display: none;">
+                <h2>输入实际指标值</h2>
+                <div class="indicator-grid" id="indicator-grid"></div>
+                <button onclick="calculateScore()" style="margin-top: 20px; width: 100%;">计算评分</button>
+            </div>
+        </div>
+
+        <div id="result" style="display: none;" class="card result-card">
+            <div class="score-display">
+                <div style="font-size: 16px; opacity: 0.8;">综合得分</div>
+                <div class="score-number" id="total-score">--</div>
+                <div class="score-grade" id="grade-display">--</div>
+            </div>
+            
+            <h2>指标明细</h2>
+            <table class="detail-table">
+                <thead>
+                    <tr>
+                        <th>指标名称</th>
+                        <th>实际值</th>
+                        <th>行业标准</th>
+                        <th>得分</th>
+                        <th>评级</th>
+                    </tr>
+                </thead>
+                <tbody id="detail-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let standardsData = null;
+
+        // 加载行业列表
+        fetch('/api/enterprise-standards-2026')
+            .then(r => r.json())
+            .then(data => {
+                standardsData = data;
+                const select = document.getElementById('industry');
+                data.industries.forEach(ind => {
+                    const opt = document.createElement('option');
+                    opt.value = ind.code;
+                    opt.textContent = `${ind.code} - ${ind.name}`;
+                    select.appendChild(opt);
+                });
+            });
+
+        function loadStandards() {
+            const code = document.getElementById('industry').value;
+            if (!code) {
+                document.getElementById('indicators').style.display = 'none';
+                return;
+            }
+
+            const industry = standardsData.industries.find(i => i.code === code);
+            const grid = document.getElementById('indicator-grid');
+            grid.innerHTML = '';
+
+            Object.keys(industry.standards).forEach(name => {
+                const div = document.createElement('div');
+                div.className = 'indicator-item';
+                div.innerHTML = `
+                    <label>${name}</label>
+                    <input type="number" step="0.01" data-indicator="${name}" placeholder="请输入实际值">
+                `;
+                grid.appendChild(div);
+            });
+
+            document.getElementById('indicators').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+        }
+
+        function calculateScore() {
+            const code = document.getElementById('industry').value;
+            const inputs = document.querySelectorAll('#indicator-grid input');
+            const indicators = {};
+            
+            inputs.forEach(inp => {
+                if (inp.value) {
+                    indicators[inp.dataset.indicator] = parseFloat(inp.value);
+                }
+            });
+
+            if (Object.keys(indicators).length === 0) {
+                alert('请至少输入一个指标值');
+                return;
+            }
+
+            fetch('/api/enterprise-score', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ industry_code: code, indicators })
+            })
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('total-score').textContent = data.total_score;
+                document.getElementById('grade-display').textContent = data.grade;
+                
+                const tbody = document.getElementById('detail-tbody');
+                tbody.innerHTML = '';
+                data.details.forEach(d => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${d.indicator}</td>
+                        <td>${d.actual}</td>
+                        <td>${d.standard}</td>
+                        <td>${d.score}</td>
+                        <td><span class="grade-badge grade-${d.grade}">${d.grade}</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+                
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+            });
+        }
+    </script>
+</body>
+</html>
